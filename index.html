@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Nylene Consumption Sheet</title>
+        <link rel="stylesheet" href="style.css" />
+        <link
+            rel="icon"
+            type="image/svg+xml"
+            href="https://nylene.com/wp-content/uploads/2023/03/NYLENE-LOGO-Web.svg"
+        />
+    </head>
+    <body data-page="form">
+        <main class="page">
+            <header class="page__header">
+                <h1>Nylene Consumption Sheet</h1>
+                <p>Enter the box details to get started.</p>
+            </header>
+
+            <form id="box-form" class="card" novalidate>
+                <div class="form__field">
+                    <label for="box-number">Box Number</label>
+                    <input
+                        id="box-number"
+                        name="boxNumber"
+                        type="text"
+                        inputmode="text"
+                        autocomplete="off"
+                        placeholder="e.g. AD1620301"
+                        required
+                    />
+                    <small class="form__hint">Letters and numbers only</small>
+                </div>
+
+                <div class="form__field">
+                    <label for="product">Product</label>
+                    <select id="product" name="product" required>
+                        <option value="" disabled selected>
+                            Select a product
+                        </option>
+                        <option value="CSDN-INT">CSDN-INT</option>
+                        <option value="BS700D">BS700D</option>
+                        <option value="BS640T">BS640T</option>
+                        <option value="BS640A">BS640A</option>
+                        <option value="BS640AFOIL">BS640AFOIL</option>
+                        <option value="BS600CSDN">BS600CSDN</option>
+                        <option value="BS700AFOIL">BS700AFOIL</option>
+                        <option value="BS700RA">BS700RA</option>
+                        <option value="BX3WQ662X">BX3WQ662X</option>
+                        <option value="BX3WQ662">BX3WQ662</option>
+                        <option value="BX3WQ662XBAGS">BX3WQ662XBAGS</option>
+                        <option value="BX3WQ662BAGS">BX3WQ662BAGS</option>
+                        <option value="WASTE">WASTE</option>
+                        <option value="OLIGOMERS">OLIGOMERS</option>
+                        <option value="SLUDGE">SLUDGE</option>
+                        <option value="UNEXT-CHIP">UNEXT-CHIP</option>
+                        <option value="CAPRO">CAPRO</option>
+                        <option value="BS700R80">BS700R80</option>
+                        <option value="BS640UX">BS640UX</option>
+                        <option value="BX3RF">BX3RF</option>
+                        <option value="PA6-205">PA6-205</option>
+                        <option value="BS700A">BS700A</option>
+                        <option value="BX3WQ662X-02BAGS">
+                            BX3WQ662X-02BAGS
+                        </option>
+                        <option value="L-195-1">L-195-1</option>
+                        <option value="L-195-2">L-195-2</option>
+                        <option value="L-196">L-196</option>
+                        <option value="700D-INT">700D-INT</option>
+                        <option value="INT 190">INT 190</option>
+                    </select>
+                </div>
+
+                <div class="form__field">
+                    <label for="net-weight">Net Weight(lbs)</label>
+                    <input
+                        id="net-weight"
+                        name="netWeight"
+                        type="number"
+                        inputmode="decimal"
+                        min="0.01"
+                        step="0.01"
+                        autocomplete="off"
+                        placeholder="e.g. 25.5"
+                        required
+                    />
+                    <small class="form__hint">Numbers only</small>
+                </div>
+
+                <div class="form__field">
+                    <label for="operator-name">Operator Name</label>
+                    <input
+                        id="operator-name"
+                        name="operatorName"
+                        type="text"
+                        autocomplete="name"
+                        placeholder="First Last"
+                        required
+                    />
+                </div>
+
+                <p id="form-error" class="form__error" aria-live="polite"></p>
+
+                <div class="form__actions">
+                    <button type="submit" class="btn primary">Next</button>
+                </div>
+            </form>
+        </main>
+        <script src="app.js" defer></script>
+    </body>
+</html>

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Chip Destination</title>
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body data-page="destination">
+        <main class="page">
+            <header class="page__header">
+                <h1>Chip Destination</h1>
+                <p>Select one destination for the chip.</p>
+            </header>
+
+            <form id="destination-form" class="card" novalidate>
+                <fieldset class="checkbox-group">
+                    <legend>Chip Destination</legend>
+                    <label class="checkbox-option">
+                        <input type="checkbox" name="destination" value="DCA" />
+                        <span>DCA</span>
+                    </label>
+                    <label class="checkbox-option">
+                        <input type="checkbox" name="destination" value="DCB" />
+                        <span>DCB</span>
+                    </label>
+                    <label class="checkbox-option">
+                        <input type="checkbox" name="destination" value="PCH" />
+                        <span>PCH</span>
+                    </label>
+                    <label class="checkbox-option">
+                        <input
+                            type="checkbox"
+                            name="destination"
+                            value="Coperion"
+                        />
+                        <span>Coperion</span>
+                    </label>
+                    <label class="checkbox-option">
+                        <input
+                            type="checkbox"
+                            name="destination"
+                            value="Dryer"
+                        />
+                        <span>Dryer</span>
+                    </label>
+                    <label class="checkbox-option">
+                        <input
+                            type="checkbox"
+                            name="destination"
+                            value="Silo"
+                        />
+                        <span>Silo</span>
+                    </label>
+                </fieldset>
+
+                <p
+                    id="destination-error"
+                    class="form__error"
+                    aria-live="polite"
+                ></p>
+
+                <div class="form__actions">
+                    <button type="submit" class="btn primary">Save</button>
+                </div>
+            </form>
+        </main>
+        <script src="app.js" defer></script>
+    </body>
+</html>

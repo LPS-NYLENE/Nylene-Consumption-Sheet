@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Summary</title>
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body data-page="summary">
+        <main class="page">
+            <header class="page__header">
+                <h1>Summary.</h1>
+                <p>Review the details before saving.</p>
+            </header>
+
+            <section class="card">
+                <dl class="summary-list">
+                    <div class="summary-item">
+                        <dt>Box Number</dt>
+                        <dd id="summary-box"></dd>
+                    </div>
+                    <div class="summary-item">
+                        <dt>Product</dt>
+                        <dd id="summary-product"></dd>
+                    </div>
+                    <div class="summary-item">
+                        <dt>Net Weight (lbs)</dt>
+                        <dd id="summary-net-weight"></dd>
+                    </div>
+                    <div class="summary-item">
+                        <dt>Chip Destination</dt>
+                        <dd id="summary-destination"></dd>
+                    </div>
+                    <div class="summary-item">
+                        <dt>Name of Operator</dt>
+                        <dd id="summary-operator"></dd>
+                    </div>
+                    <div class="summary-item">
+                        <dt>Date &amp; Time</dt>
+                        <dd id="summary-datetime"></dd>
+                    </div>
+                </dl>
+
+                <div class="summary__actions">
+                    <button class="btn primary" id="final-save">Save</button>
+                    <button class="btn secondary" id="go-back">Go back</button>
+                </div>
+                <p
+                    id="save-message"
+                    class="form__success"
+                    aria-live="polite"
+                ></p>
+            </section>
+        </main>
+        <script src="app.js" defer></script>
+    </body>
+</html>

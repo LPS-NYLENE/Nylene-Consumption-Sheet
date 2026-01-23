@@ -1,0 +1,26 @@
+{
+  "name": "workspace",
+  "version": "1.0.0",
+  "main": "server.cjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.cjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/olorunyomi97/Nylene-Consumption-Sheet.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/olorunyomi97/Nylene-Consumption-Sheet/issues"
+  },
+  "homepage": "https://github.com/olorunyomi97/Nylene-Consumption-Sheet#readme",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.2.1",
+    "xlsx": "^0.18.5"
+  },
+  "description": ""
+}
