@@ -106,6 +106,22 @@ body {
     margin-top: 8px;
 }
 
+.chip-type__buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.chip-type-btn {
+    padding: 10px 14px;
+}
+
+.chip-type-btn[aria-pressed="true"] {
+    background: #2563eb;
+    color: #ffffff;
+    border-color: #2563eb;
+}
+
 .btn {
     border-radius: 999px;
     padding: 12px 24px;

@@ -20,17 +20,77 @@
 
             <form id="box-form" class="card" novalidate>
                 <div class="form__field">
-                    <label for="box-number">Box Number</label>
+                    <label id="chip-type-label">Select what type of chip this is</label>
+                    <div
+                        class="chip-type__buttons"
+                        role="group"
+                        aria-labelledby="chip-type-label"
+                    >
+                        <button
+                            type="button"
+                            class="btn secondary chip-type-btn"
+                            data-chip-type="box"
+                            aria-pressed="true"
+                        >
+                            Box Number
+                        </button>
+                        <button
+                            type="button"
+                            class="btn secondary chip-type-btn"
+                            data-chip-type="bulk"
+                            aria-pressed="false"
+                        >
+                            Bulk/Silo
+                        </button>
+                        <button
+                            type="button"
+                            class="btn secondary chip-type-btn"
+                            data-chip-type="purchased"
+                            aria-pressed="false"
+                        >
+                            Purchased Chip
+                        </button>
+                    </div>
+                </div>
+
+                <div class="form__field" id="chip-box-field">
+                    <label for="chip-box-number">Box Number</label>
                     <input
-                        id="box-number"
-                        name="boxNumber"
+                        id="chip-box-number"
+                        name="chipBoxNumber"
                         type="text"
                         inputmode="text"
                         autocomplete="off"
                         placeholder="e.g. AD1620301"
-                        required
                     />
                     <small class="form__hint">Letters and numbers only</small>
+                </div>
+
+                <div class="form__field" id="chip-bulk-field" hidden>
+                    <label for="chip-bulk-silo">Bulk/Silo</label>
+                    <input
+                        id="chip-bulk-silo"
+                        name="chipBulkSilo"
+                        type="text"
+                        inputmode="text"
+                        autocomplete="off"
+                        placeholder="e.g. DCA Silo"
+                    />
+                    <small class="form__hint">
+                        Letters and special characters only
+                    </small>
+                </div>
+
+                <div class="form__field" id="chip-purchased-field" hidden>
+                    <label for="chip-purchased">Purchased Chip</label>
+                    <select id="chip-purchased" name="chipPurchased">
+                        <option value="" disabled selected>
+                            Select a purchased chip
+                        </option>
+                        <option value="BASF">BASF</option>
+                        <option value="AdvanSix">AdvanSix</option>
+                        <option value="MOHAWK">MOHAWK</option>
+                    </select>
                 </div>
 
                 <div class="form__field">
