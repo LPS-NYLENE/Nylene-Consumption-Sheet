@@ -72,14 +72,28 @@ function formatDateTime(date) {
 function initFormPage() {
     const form = document.getElementById("box-form");
     const errorElement = document.getElementById("form-error");
-    const boxInput = document.getElementById("box-number");
+    const chipTypeButtons = Array.from(
+        document.querySelectorAll("[data-chip-type]"),
+    );
+    const chipBoxField = document.getElementById("chip-box-field");
+    const chipBulkField = document.getElementById("chip-bulk-field");
+    const chipPurchasedField = document.getElementById("chip-purchased-field");
+    const chipBoxInput = document.getElementById("chip-box-number");
+    const chipBulkInput = document.getElementById("chip-bulk-silo");
+    const chipPurchasedSelect = document.getElementById("chip-purchased");
     const productSelect = document.getElementById("product");
     const netWeightInput = document.getElementById("net-weight");
     const operatorInput = document.getElementById("operator-name");
 
     if (
         !form ||
-        !boxInput ||
+        chipTypeButtons.length === 0 ||
+        !chipBoxField ||
+        !chipBulkField ||
+        !chipPurchasedField ||
+        !chipBoxInput ||
+        !chipBulkInput ||
+        !chipPurchasedSelect ||
         !productSelect ||
         !netWeightInput ||
         !operatorInput
@@ -87,10 +101,80 @@ function initFormPage() {
         return;
     }
 
+    function getSelectedChipType() {
+        const selected = chipTypeButtons.find(
+            (button) => button.getAttribute("aria-pressed") === "true",
+        );
+        return selected?.dataset?.chipType || "";
+    }
+
+    function setSelectedChipType(type) {
+        chipTypeButtons.forEach((button) => {
+            const isSelected = button.dataset.chipType === type;
+            button.setAttribute("aria-pressed", isSelected ? "true" : "false");
+        });
+
+        const showBox = type === "box";
+        const showBulk = type === "bulk";
+        const showPurchased = type === "purchased";
+
+        chipBoxField.hidden = !showBox;
+        chipBulkField.hidden = !showBulk;
+        chipPurchasedField.hidden = !showPurchased;
+
+        if (showBox) {
+            chipBoxInput.focus();
+        } else if (showBulk) {
+            chipBulkInput.focus();
+        } else if (showPurchased) {
+            chipPurchasedSelect.focus();
+        }
+    }
+
+    chipTypeButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            const type = button.dataset.chipType;
+            if (!type) {
+                return;
+            }
+            setSelectedChipType(type);
+            const stored = getStoredData();
+            setStoredData({ ...stored, chipType: type });
+        });
+    });
+
     // Pre-fill inputs from any previously saved state.
     const stored = getStoredData();
-    if (stored.boxNumber) {
-        boxInput.value = stored.boxNumber;
+    const initialChipType =
+        stored.chipType === "box" ||
+        stored.chipType === "bulk" ||
+        stored.chipType === "purchased"
+            ? stored.chipType
+            : "box";
+    setSelectedChipType(initialChipType);
+
+    chipBoxInput.addEventListener("input", () => {
+        const sanitized = chipBoxInput.value.replace(/[^a-z0-9]/gi, "");
+        if (chipBoxInput.value !== sanitized) {
+            chipBoxInput.value = sanitized;
+        }
+    });
+
+    chipBulkInput.addEventListener("input", () => {
+        const sanitized = chipBulkInput.value.replace(/\d/g, "");
+        if (chipBulkInput.value !== sanitized) {
+            chipBulkInput.value = sanitized;
+        }
+    });
+
+    if (stored.chipBoxNumber) {
+        chipBoxInput.value = stored.chipBoxNumber;
+    }
+    if (stored.chipBulkSilo) {
+        chipBulkInput.value = stored.chipBulkSilo;
+    }
+    if (stored.chipPurchased) {
+        chipPurchasedSelect.value = stored.chipPurchased;
     }
     if (stored.product) {
         productSelect.value = stored.product;
@@ -107,7 +191,10 @@ function initFormPage() {
         setMessage(errorElement, "");
 
         // Normalize inputs before validation and storage.
-        const boxNumber = normalizeText(boxInput.value);
+        const chipType = getSelectedChipType();
+        const chipBoxNumber = normalizeText(chipBoxInput.value);
+        const chipBulkSilo = normalizeText(chipBulkInput.value);
+        const chipPurchased = chipPurchasedSelect.value;
         const product = productSelect.value;
         const netWeight = normalizeText(netWeightInput.value);
         const netWeightValue = Number.parseFloat(netWeight);
@@ -115,16 +202,65 @@ function initFormPage() {
         const operatorParts = operatorName.split(/\s+/).filter(Boolean);
 
         // Validate required fields with user-friendly messages.
-        if (!boxNumber) {
-            setMessage(errorElement, "Please enter a box number.");
-            boxInput.focus();
+        if (!chipType) {
+            setMessage(
+                errorElement,
+                "Please select what type of chip this is.",
+            );
+            chipTypeButtons[0].focus();
             return;
         }
-        if (!/^[a-z0-9]+$/i.test(boxNumber)) {
-            setMessage(errorElement, "Box number must be alphanumeric only.");
-            boxInput.focus();
+
+        let boxNumber = "";
+        if (chipType === "box") {
+            if (!chipBoxNumber) {
+                setMessage(errorElement, "Please enter a box number.");
+                chipBoxInput.focus();
+                return;
+            }
+            if (!/^[a-z0-9]+$/i.test(chipBoxNumber)) {
+                setMessage(
+                    errorElement,
+                    "Box number must be alphanumeric only.",
+                );
+                chipBoxInput.focus();
+                return;
+            }
+            boxNumber = chipBoxNumber;
+        } else if (chipType === "bulk") {
+            if (!chipBulkSilo) {
+                setMessage(errorElement, "Please enter a bulk/silo value.");
+                chipBulkInput.focus();
+                return;
+            }
+            if (/\d/.test(chipBulkSilo)) {
+                setMessage(
+                    errorElement,
+                    "Bulk/Silo must not contain numbers.",
+                );
+                chipBulkInput.focus();
+                return;
+            }
+            boxNumber = chipBulkSilo;
+        } else if (chipType === "purchased") {
+            if (!chipPurchased) {
+                setMessage(
+                    errorElement,
+                    "Please select a purchased chip option.",
+                );
+                chipPurchasedSelect.focus();
+                return;
+            }
+            boxNumber = chipPurchased;
+        } else {
+            setMessage(
+                errorElement,
+                "Please select what type of chip this is.",
+            );
+            chipTypeButtons[0].focus();
             return;
         }
+
         if (!product) {
             setMessage(errorElement, "Please select a product.");
             productSelect.focus();
@@ -149,6 +285,10 @@ function initFormPage() {
         // Persist data and move to the destination step.
         setStoredData({
             ...stored,
+            chipType,
+            chipBoxNumber,
+            chipBulkSilo,
+            chipPurchased,
             boxNumber,
             product,
             netWeight,
