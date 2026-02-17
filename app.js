@@ -101,6 +101,53 @@ function initFormPage() {
         return;
     }
 
+    const PURCHASED_PRODUCT_VALUE = "PURCHASED";
+    let lastManualProductSelection = "";
+
+    function ensureProductOption(select, value, label) {
+        const existing = Array.from(select.options).find(
+            (option) => option.value === value,
+        );
+        if (existing) {
+            return existing;
+        }
+
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        select.append(option);
+        return option;
+    }
+
+    const purchasedProductOption = ensureProductOption(
+        productSelect,
+        PURCHASED_PRODUCT_VALUE,
+        "Purchased",
+    );
+    purchasedProductOption.hidden = true;
+
+    function syncProductSelectForChipType(type) {
+        const isPurchasedChip = type === "purchased";
+
+        if (isPurchasedChip) {
+            if (productSelect.value && productSelect.value !== PURCHASED_PRODUCT_VALUE) {
+                lastManualProductSelection = productSelect.value;
+            }
+
+            purchasedProductOption.hidden = false;
+            productSelect.value = PURCHASED_PRODUCT_VALUE;
+            productSelect.disabled = true;
+            return;
+        }
+
+        productSelect.disabled = false;
+        purchasedProductOption.hidden = true;
+
+        if (productSelect.value === PURCHASED_PRODUCT_VALUE) {
+            productSelect.value = lastManualProductSelection || "";
+        }
+    }
+
     function getSelectedChipType() {
         const selected = chipTypeButtons.find(
             (button) => button.getAttribute("aria-pressed") === "true",
@@ -129,6 +176,8 @@ function initFormPage() {
         } else if (showPurchased) {
             chipPurchasedSelect.focus();
         }
+
+        syncProductSelectForChipType(type);
     }
 
     chipTypeButtons.forEach((button) => {
@@ -175,6 +224,9 @@ function initFormPage() {
     }
     if (stored.product) {
         productSelect.value = stored.product;
+        if (stored.product !== PURCHASED_PRODUCT_VALUE) {
+            lastManualProductSelection = stored.product;
+        }
     }
     if (stored.netWeight !== undefined && stored.netWeight !== null) {
         netWeightInput.value = stored.netWeight;
@@ -182,6 +234,15 @@ function initFormPage() {
     if (stored.operatorName) {
         operatorInput.value = stored.operatorName;
     }
+
+    productSelect.addEventListener("change", () => {
+        if (!productSelect.disabled && productSelect.value) {
+            lastManualProductSelection = productSelect.value;
+        }
+    });
+
+    // Start with product enabled and "Purchased" option hidden until selected.
+    syncProductSelectForChipType("");
 
     form.addEventListener("submit", (event) => {
         event.preventDefault();
@@ -192,7 +253,7 @@ function initFormPage() {
         const chipBoxNumber = normalizeText(chipBoxInput.value);
         const chipBulkSilo = normalizeText(chipBulkInput.value);
         const chipPurchased = chipPurchasedSelect.value;
-        const product = productSelect.value;
+        let product = productSelect.value;
         const netWeight = normalizeText(netWeightInput.value);
         const netWeightValue = Number.parseFloat(netWeight);
         const operatorName = normalizeText(operatorInput.value);
@@ -249,6 +310,7 @@ function initFormPage() {
                 return;
             }
             boxNumber = chipPurchased;
+            product = PURCHASED_PRODUCT_VALUE;
         } else {
             setMessage(
                 errorElement,
