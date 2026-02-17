@@ -79,7 +79,7 @@ function initFormPage() {
     const chipBulkField = document.getElementById("chip-bulk-field");
     const chipPurchasedField = document.getElementById("chip-purchased-field");
     const chipBoxInput = document.getElementById("chip-box-number");
-    const chipBulkInput = document.getElementById("chip-bulk-silo");
+    const chipBulkSelect = document.getElementById("chip-bulk-silo");
     const chipPurchasedSelect = document.getElementById("chip-purchased");
     const productSelect = document.getElementById("product");
     const netWeightInput = document.getElementById("net-weight");
@@ -92,7 +92,7 @@ function initFormPage() {
         !chipBulkField ||
         !chipPurchasedField ||
         !chipBoxInput ||
-        !chipBulkInput ||
+        !chipBulkSelect ||
         !chipPurchasedSelect ||
         !productSelect ||
         !netWeightInput ||
@@ -172,7 +172,7 @@ function initFormPage() {
         if (showBox) {
             chipBoxInput.focus();
         } else if (showBulk) {
-            chipBulkInput.focus();
+            chipBulkSelect.focus();
         } else if (showPurchased) {
             chipPurchasedSelect.focus();
         }
@@ -206,18 +206,11 @@ function initFormPage() {
         }
     });
 
-    chipBulkInput.addEventListener("input", () => {
-        const sanitized = chipBulkInput.value.replace(/\d/g, "");
-        if (chipBulkInput.value !== sanitized) {
-            chipBulkInput.value = sanitized;
-        }
-    });
-
     if (stored.chipBoxNumber) {
         chipBoxInput.value = stored.chipBoxNumber;
     }
     if (stored.chipBulkSilo) {
-        chipBulkInput.value = stored.chipBulkSilo;
+        chipBulkSelect.value = stored.chipBulkSilo;
     }
     if (stored.chipPurchased) {
         chipPurchasedSelect.value = stored.chipPurchased;
@@ -251,7 +244,7 @@ function initFormPage() {
         // Normalize inputs before validation and storage.
         const chipType = getSelectedChipType();
         const chipBoxNumber = normalizeText(chipBoxInput.value);
-        const chipBulkSilo = normalizeText(chipBulkInput.value);
+        const chipBulkSilo = chipBulkSelect.value;
         const chipPurchased = chipPurchasedSelect.value;
         let product = productSelect.value;
         const netWeight = normalizeText(netWeightInput.value);
@@ -287,16 +280,8 @@ function initFormPage() {
             boxNumber = chipBoxNumber;
         } else if (chipType === "bulk") {
             if (!chipBulkSilo) {
-                setMessage(errorElement, "Please enter a bulk/silo value.");
-                chipBulkInput.focus();
-                return;
-            }
-            if (/\d/.test(chipBulkSilo)) {
-                setMessage(
-                    errorElement,
-                    "Bulk/Silo must not contain numbers.",
-                );
-                chipBulkInput.focus();
+                setMessage(errorElement, "Please select a bulk/silo option.");
+                chipBulkSelect.focus();
                 return;
             }
             boxNumber = chipBulkSilo;

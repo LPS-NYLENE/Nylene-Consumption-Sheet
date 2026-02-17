@@ -66,16 +66,16 @@
 
                 <div class="form__field" id="chip-bulk-field" hidden>
                     <label for="chip-bulk-silo">Bulk/Silo</label>
-                    <input
-                        id="chip-bulk-silo"
-                        name="chipBulkSilo"
-                        type="text"
-                        inputmode="text"
-                        autocomplete="off"
-                        placeholder="e.g. DCA Silo"
-                    />
+                    <select id="chip-bulk-silo" name="chipBulkSilo">
+                        <option value="" disabled selected>
+                            Select a bulk/silo option
+                        </option>
+                        <option value="A-Bulk">A-Bulk</option>
+                        <option value="B-Bulk">B-Bulk</option>
+                        <option value="C-Bulk">C-Bulk</option>
+                    </select>
                     <small class="form__hint">
-                        Letters and special characters only
+                        Select one bulk option
                     </small>
                 </div>
 
