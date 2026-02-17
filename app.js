@@ -145,13 +145,10 @@ function initFormPage() {
 
     // Pre-fill inputs from any previously saved state.
     const stored = getStoredData();
-    const initialChipType =
-        stored.chipType === "box" ||
-        stored.chipType === "bulk" ||
-        stored.chipType === "purchased"
-            ? stored.chipType
-            : "";
-    setSelectedChipType(initialChipType);
+    // Always start with just the buttons visible.
+    // Even if a previous chip type exists in localStorage, require an explicit
+    // selection to reveal an input field.
+    setSelectedChipType("");
 
     chipBoxInput.addEventListener("input", () => {
         const sanitized = chipBoxInput.value.replace(/[^a-z0-9]/gi, "");
