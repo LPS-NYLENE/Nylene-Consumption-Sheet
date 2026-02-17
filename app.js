@@ -150,7 +150,7 @@ function initFormPage() {
         stored.chipType === "bulk" ||
         stored.chipType === "purchased"
             ? stored.chipType
-            : "box";
+            : "";
     setSelectedChipType(initialChipType);
 
     chipBoxInput.addEventListener("input", () => {
