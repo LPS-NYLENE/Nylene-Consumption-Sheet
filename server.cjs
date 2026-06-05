@@ -7,9 +7,21 @@ const path = require("path");
 // Express API that accepts form submissions and writes rows to Excel.
 const app = express();
 const PORT = process.env.PORT || 3000;
-// Absolute Excel path used by the save endpoint (configure per environment).
-// const FILE_PATH ="/Users/biggie/Desktop/nylene-conumption-data/consumption-sheet.xlsx";
-const FILE_PATH = "C:\Users\abimbola.balogun\Desktop\Nylene consumption sheet.xlsx"
+const PUBLIC_FILES = new Set([
+    "app.js",
+    "destination.html",
+    "favico.svg",
+    "index.html",
+    "style.css",
+    "summary.html",
+]);
+const WINDOWS_DEFAULT_FILE_PATH = "Z:\\Nylene consumption sheet.xlsx";
+const LOCAL_DEFAULT_FILE_PATH = path.join(
+    __dirname,
+    "data",
+    "consumption-sheet.xlsx",
+);
+// const FILE_PATH = "Z:\Nylene consumption sheet.xlsx"
 const SHEET_NAME = "Sheet1";
 const HEADERS = [
     "Box Number",
@@ -21,8 +33,36 @@ const HEADERS = [
     "Net Weight",
 ];
 
+// Excel path used by the save endpoint (override with EXCEL_FILE_PATH).
+const FILE_PATH = getExcelFilePath();
+
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
+
+app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname, "index.html"));
+});
+
+app.get("/:file", (req, res, next) => {
+    const fileName = req.params.file;
+    if (!PUBLIC_FILES.has(fileName)) {
+        return next();
+    }
+
+    return res.sendFile(path.join(__dirname, fileName));
+});
+
+function getExcelFilePath() {
+    if (process.env.EXCEL_FILE_PATH) {
+        return path.resolve(process.env.EXCEL_FILE_PATH);
+    }
+
+    if (process.platform === "win32") {
+        return WINDOWS_DEFAULT_FILE_PATH;
+    }
+
+    return path.resolve(LOCAL_DEFAULT_FILE_PATH);
+}
 
 function getTrimmedString(value) {
     return typeof value === "string" ? value.trim() : "";
@@ -163,14 +203,21 @@ app.post("/save", (req, res) => {
         XLSX.utils.sheet_add_aoa(worksheet, [row], { origin: -1 });
         XLSX.writeFile(workbook, FILE_PATH);
 
-        return res.json({ success: true });
+        // return res.json({ success: true });
+          return res.json({ success: true, filePath: FILE_PATH });
     } catch (error) {
-        console.error("Failed to save data to Excel file.", error);
-        return res.status(500).json({ error: "Unable to save data." });
+        // console.error("Failed to save data to Excel file.", error);
+        // return res.status(500).json({ error: "Unable to save data." });
+        console.error(`Failed to save data to Excel file at ${FILE_PATH}.`, error);
+        return res.status(500).json({
+            error: "Unable to save data.",
+            filePath: FILE_PATH,
+        });
     }
 });
 
 app.listen(PORT, () => {
     // Simple startup log for local development.
     console.log(`Server running at http://localhost:${PORT}`);
+    console.log(`Excel file path: ${FILE_PATH}`);
 });

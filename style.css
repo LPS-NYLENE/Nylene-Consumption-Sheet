@@ -2,6 +2,10 @@
     box-sizing: border-box;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 body {
     margin: 0;
     font-family: "Avenir", "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
@@ -104,6 +108,22 @@ body {
     display: flex;
     gap: 12px;
     margin-top: 8px;
+}
+
+.chip-type__buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.chip-type-btn {
+    padding: 10px 14px;
+}
+
+.chip-type-btn[aria-pressed="true"] {
+    background: #2563eb;
+    color: #ffffff;
+    border-color: #2563eb;
 }
 
 .btn {
