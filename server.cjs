@@ -7,9 +7,19 @@ const path = require("path");
 // Express API that accepts form submissions and writes rows to Excel.
 const app = express();
 const PORT = process.env.PORT || 3000;
-// Absolute Excel path used by the save endpoint (configure per environment).
-const FILE_PATH =
-    "/Users/biggie/Desktop/nylene-conumption-data/consumption-sheet.xlsx";
+const PUBLIC_FILES = new Set([
+    "app.js",
+    "destination.html",
+    "favico.svg",
+    "index.html",
+    "style.css",
+    "summary.html",
+]);
+// Excel path used by the save endpoint (override with EXCEL_FILE_PATH).
+const FILE_PATH = path.resolve(
+    process.env.EXCEL_FILE_PATH ||
+        path.join(__dirname, "data", "consumption-sheet.xlsx"),
+);
 const SHEET_NAME = "Sheet1";
 const HEADERS = [
     "Box Number",
@@ -23,6 +33,19 @@ const HEADERS = [
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
+
+app.get("/", (req, res) => {
+    res.sendFile(path.join(__dirname, "index.html"));
+});
+
+app.get("/:file", (req, res, next) => {
+    const fileName = req.params.file;
+    if (!PUBLIC_FILES.has(fileName)) {
+        return next();
+    }
+
+    return res.sendFile(path.join(__dirname, fileName));
+});
 
 function getTrimmedString(value) {
     return typeof value === "string" ? value.trim() : "";
@@ -173,4 +196,5 @@ app.post("/save", (req, res) => {
 app.listen(PORT, () => {
     // Simple startup log for local development.
     console.log(`Server running at http://localhost:${PORT}`);
+    console.log(`Excel file path: ${FILE_PATH}`);
 });
