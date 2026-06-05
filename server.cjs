@@ -15,10 +15,11 @@ const PUBLIC_FILES = new Set([
     "style.css",
     "summary.html",
 ]);
-// Excel path used by the save endpoint (override with EXCEL_FILE_PATH).
-const FILE_PATH = path.resolve(
-    process.env.EXCEL_FILE_PATH ||
-        path.join(__dirname, "data", "consumption-sheet.xlsx"),
+const WINDOWS_DEFAULT_FILE_PATH = "Z:\\Nylene consumption sheet.xlsx";
+const LOCAL_DEFAULT_FILE_PATH = path.join(
+    __dirname,
+    "data",
+    "consumption-sheet.xlsx",
 );
 const SHEET_NAME = "Sheet1";
 const HEADERS = [
@@ -30,6 +31,8 @@ const HEADERS = [
     "Time",
     "Net Weight",
 ];
+// Excel path used by the save endpoint (override with EXCEL_FILE_PATH).
+const FILE_PATH = getExcelFilePath();
 
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
@@ -46,6 +49,18 @@ app.get("/:file", (req, res, next) => {
 
     return res.sendFile(path.join(__dirname, fileName));
 });
+
+function getExcelFilePath() {
+    if (process.env.EXCEL_FILE_PATH) {
+        return path.resolve(process.env.EXCEL_FILE_PATH);
+    }
+
+    if (process.platform === "win32") {
+        return WINDOWS_DEFAULT_FILE_PATH;
+    }
+
+    return path.resolve(LOCAL_DEFAULT_FILE_PATH);
+}
 
 function getTrimmedString(value) {
     return typeof value === "string" ? value.trim() : "";
@@ -186,10 +201,13 @@ app.post("/save", (req, res) => {
         XLSX.utils.sheet_add_aoa(worksheet, [row], { origin: -1 });
         XLSX.writeFile(workbook, FILE_PATH);
 
-        return res.json({ success: true });
+        return res.json({ success: true, filePath: FILE_PATH });
     } catch (error) {
-        console.error("Failed to save data to Excel file.", error);
-        return res.status(500).json({ error: "Unable to save data." });
+        console.error(`Failed to save data to Excel file at ${FILE_PATH}.`, error);
+        return res.status(500).json({
+            error: "Unable to save data.",
+            filePath: FILE_PATH,
+        });
     }
 });
 
