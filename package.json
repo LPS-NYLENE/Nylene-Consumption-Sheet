@@ -18,7 +18,7 @@
   },
   "homepage": "https://github.com/olorunyomi97/Nylene-Consumption-Sheet#readme",
   "dependencies": {
-    "cors": "^2.8.5",
+    "cors": "^2.8.6",
     "express": "^5.2.1",
     "xlsx": "^0.18.5"
   },
