@@ -150,7 +150,7 @@ function getOrCreateWorksheet(workbook) {
             header: 1,
             range: 0,
         })[0];
-        // if (!headerRow || headerRow.length < HEADERS.length) {
+        // if (!headerRow || headerRow.length < HEADERS.lengthds) {
         if (!headersMatch(HEADERS, headerRow)) {
             XLSX.utils.sheet_add_aoa(worksheet, [HEADERS], { origin: "A1" });
         }
