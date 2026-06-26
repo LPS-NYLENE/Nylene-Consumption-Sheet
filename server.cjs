@@ -15,7 +15,8 @@ const PUBLIC_FILES = new Set([
     "style.css",
     "summary.html",
 ]);
-const WINDOWS_DEFAULT_FILE_PATH = "Z:\\Nylene consumption sheet.xlsx";
+// const WINDOWS_DEFAULT_FILE_PATH = "Z:\\Nylene consumption sheet.xlsx";
+const WINDOWS_DEFAULT_FILE_PATH = "G:\\Installed Software\\1 Temp\\1 Temp\\Cool Room Consumption Folder\\Nylene consumption sheet.xlsx"
 const LOCAL_DEFAULT_FILE_PATH = path.join(
     __dirname,
     "data",
