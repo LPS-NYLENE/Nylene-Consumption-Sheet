@@ -159,10 +159,101 @@ function getOrCreateWorksheet(workbook) {
     return worksheet;
 }
 
+function parseDateCell(value) {
+    if (value instanceof Date) {
+        return {
+            year: value.getFullYear(),
+            month: value.getMonth() + 1,
+            day: value.getDate(),
+        };
+    }
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+        const parsed = XLSX.SSF.parse_date_code(value);
+        if (parsed) {
+            return {
+                year: parsed.y,
+                month: parsed.m,
+                day: parsed.d,
+            };
+        }
+    }
+
+    const text = getTrimmedString(String(value ?? ""));
+    const match = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    if (!match) {
+        return null;
+    }
+
+    const [, month, day, year] = match;
+    const fullYear = year.length === 2 ? `20${year}` : year;
+
+    return {
+        year: Number(fullYear),
+        month: Number(month),
+        day: Number(day),
+    };
+}
+
+function parseTimeCell(value) {
+    if (value instanceof Date) {
+        return {
+            hour: value.getHours(),
+            minute: value.getMinutes(),
+            second: value.getSeconds(),
+        };
+    }
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+        const secondsInDay = 24 * 60 * 60;
+        const totalSeconds = Math.round((value % 1) * secondsInDay);
+
+        return {
+            hour: Math.floor(totalSeconds / 3600),
+            minute: Math.floor((totalSeconds % 3600) / 60),
+            second: totalSeconds % 60,
+        };
+    }
+
+    const text = getTrimmedString(String(value ?? ""));
+    const match = text.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+    if (!match) {
+        return null;
+    }
+
+    const [, hourText, minuteText, secondText = "0", meridiem] = match;
+    let hour = Number(hourText);
+    if (meridiem) {
+        const normalizedMeridiem = meridiem.toUpperCase();
+        if (normalizedMeridiem === "PM" && hour !== 12) {
+            hour += 12;
+        } else if (normalizedMeridiem === "AM" && hour === 12) {
+            hour = 0;
+        }
+    }
+
+    return {
+        hour,
+        minute: Number(minuteText),
+        second: Number(secondText),
+    };
+}
+
 function getRowTimestamp(row) {
-    const date = getTrimmedString(String(row[4] ?? ""));
-    const time = getTrimmedString(String(row[5] ?? ""));
-    const timestamp = Date.parse(`${date} ${time}`);
+    const date = parseDateCell(row[4]);
+    const time = parseTimeCell(row[5]);
+    if (!date || !time) {
+        return null;
+    }
+
+    const timestamp = Date.UTC(
+        date.year,
+        date.month - 1,
+        date.day,
+        time.hour,
+        time.minute,
+        time.second,
+    );
 
     return Number.isFinite(timestamp) ? timestamp : null;
 }
@@ -194,6 +285,7 @@ function addNewestRowFirst(workbook, worksheet, row) {
         header: 1,
         defval: "",
         blankrows: false,
+        raw: false,
     });
     const dataRows = existingRows.slice(1);
     const newestFirstRows = sortRowsNewestFirst([row, ...dataRows]);
