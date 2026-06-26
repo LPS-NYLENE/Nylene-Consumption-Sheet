@@ -159,6 +159,36 @@ function getOrCreateWorksheet(workbook) {
     return worksheet;
 }
 
+function getRowTimestamp(row) {
+    const date = getTrimmedString(String(row[4] ?? ""));
+    const time = getTrimmedString(String(row[5] ?? ""));
+    const timestamp = Date.parse(`${date} ${time}`);
+
+    return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function sortRowsNewestFirst(rows) {
+    return rows
+        .map((row, index) => ({
+            row,
+            index,
+            timestamp: getRowTimestamp(row),
+        }))
+        .sort((left, right) => {
+            if (left.timestamp !== null && right.timestamp !== null) {
+                return right.timestamp - left.timestamp || left.index - right.index;
+            }
+            if (left.timestamp !== null) {
+                return -1;
+            }
+            if (right.timestamp !== null) {
+                return 1;
+            }
+            return left.index - right.index;
+        })
+        .map(({ row }) => row);
+}
+
 function addNewestRowFirst(workbook, worksheet, row) {
     const existingRows = XLSX.utils.sheet_to_json(worksheet, {
         header: 1,
@@ -166,11 +196,11 @@ function addNewestRowFirst(workbook, worksheet, row) {
         blankrows: false,
     });
     const dataRows = existingRows.slice(1);
+    const newestFirstRows = sortRowsNewestFirst([row, ...dataRows]);
 
     workbook.Sheets[SHEET_NAME] = XLSX.utils.aoa_to_sheet([
         HEADERS,
-        row,
-        ...dataRows,
+        ...newestFirstRows,
     ]);
 }
 
