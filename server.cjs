@@ -159,6 +159,21 @@ function getOrCreateWorksheet(workbook) {
     return worksheet;
 }
 
+function addNewestRowFirst(workbook, worksheet, row) {
+    const existingRows = XLSX.utils.sheet_to_json(worksheet, {
+        header: 1,
+        defval: "",
+        blankrows: false,
+    });
+    const dataRows = existingRows.slice(1);
+
+    workbook.Sheets[SHEET_NAME] = XLSX.utils.aoa_to_sheet([
+        HEADERS,
+        row,
+        ...dataRows,
+    ]);
+}
+
 app.post("/save", (req, res) => {
     // Validate the request and return field-level errors if needed.
     const {
@@ -196,12 +211,12 @@ app.post("/save", (req, res) => {
     ];
 
     try {
-        // Append a new row to the sheet and write the file to disk.
+        // Keep the newest submission directly under the header row.
         ensureDirectoryExists(FILE_PATH);
         const workbook = loadWorkbook(FILE_PATH);
         const worksheet = getOrCreateWorksheet(workbook);
 
-        XLSX.utils.sheet_add_aoa(worksheet, [row], { origin: -1 });
+        addNewestRowFirst(workbook, worksheet, row);
         XLSX.writeFile(workbook, FILE_PATH);
 
         // return res.json({ success: true });
