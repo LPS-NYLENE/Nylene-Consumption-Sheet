@@ -1,9 +1,9 @@
 {
-  "name": "workspace",
+  "name": "nylene-consumption-sheet",
   "version": "1.0.0",
   "main": "server.cjs",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test test/intranet.test.cjs",
     "start": "node server.cjs"
   },
   "repository": {
@@ -22,5 +22,5 @@
     "express": "^5.2.1",
     "xlsx": "^0.18.5"
   },
-  "description": ""
+  "description": "Intranet web app for the Nylene consumption sheet. One internal server hosts the UI and the shared Excel workbook for every station on the company network."
 }

@@ -1,4 +1,4 @@
-// Local storage key for persisting form state between pages.
+// Session storage key for persisting in-progress form state on this station.
 const STORAGE_KEY = "productTrackingForm";
 
 // Map <body data-page=""> values to page setup functions.
@@ -6,9 +6,11 @@ const pageInitializers = {
     form: initFormPage,
     destination: initDestinationPage,
     summary: initSummaryPage,
+    records: initRecordsPage,
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+    markActiveNav();
     // Run the initializer for the current page, if defined.
     const page = document.body?.dataset?.page;
     const init = pageInitializers[page];
@@ -17,23 +19,47 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 });
 
-function getStoredData() {
-    // Guard against invalid or missing JSON in localStorage.
+function getStorage() {
     try {
-        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+        return window.sessionStorage;
+    } catch (error) {
+        return null;
+    }
+}
+
+function getStoredData() {
+    // Guard against invalid or missing JSON in sessionStorage.
+    try {
+        const storage = getStorage();
+        return JSON.parse(storage?.getItem(STORAGE_KEY) || "null") || {};
     } catch (error) {
         return {};
     }
 }
 
 function setStoredData(data) {
-    // Persist the current flow state across page reloads.
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    // Persist the current flow state across page reloads on this station.
+    const storage = getStorage();
+    if (storage) {
+        storage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
 }
 
 function clearStoredData() {
     // Clear the wizard state once a save completes.
-    localStorage.removeItem(STORAGE_KEY);
+    const storage = getStorage();
+    if (storage) {
+        storage.removeItem(STORAGE_KEY);
+    }
+}
+
+function markActiveNav() {
+    const page = document.body?.dataset?.page;
+    document.querySelectorAll("[data-nav]").forEach((link) => {
+        if (link.dataset.nav === page) {
+            link.setAttribute("aria-current", "page");
+        }
+    });
 }
 
 function normalizeText(value) {
@@ -46,9 +72,15 @@ function getApiBaseUrl() {
         return configured.replace(/\/+$/, "");
     }
 
-    const protocol = window.location.protocol === "https:" ? "https:" : "http:";
-    const host = window.location.hostname || "localhost";
-    return `${protocol}//${host}:3000`;
+    // Same-origin when the intranet server serves the pages.
+    if (
+        window.location.protocol === "http:" ||
+        window.location.protocol === "https:"
+    ) {
+        return "";
+    }
+
+    return "http://127.0.0.1:3000";
 }
 
 function setMessage(element, message) {
@@ -195,7 +227,7 @@ function initFormPage() {
     // Pre-fill inputs from any previously saved state.
     const stored = getStoredData();
     // Always start with just the buttons visible.
-    // Even if a previous chip type exists in localStorage, require an explicit
+    // Even if a previous chip type exists in sessionStorage, require an explicit
     // selection to reveal an input field.
     setSelectedChipType("");
 
@@ -437,7 +469,7 @@ function initSummaryPage() {
     const message = document.getElementById("save-message");
     let redirectTimer = null;
 
-    // Populate the summary fields from localStorage.
+    // Populate the summary fields from this station's in-progress entry.
     if (boxNumber) {
         boxNumber.textContent = stored.boxNumber;
     }
@@ -534,4 +566,75 @@ function initSummaryPage() {
             window.location.href = "destination.html";
         });
     }
+}
+
+function initRecordsPage() {
+    const tableBody = document.getElementById("records-body");
+    const emptyState = document.getElementById("records-empty");
+    const errorElement = document.getElementById("records-error");
+    const updatedElement = document.getElementById("records-updated");
+    if (!tableBody) {
+        return;
+    }
+
+    const apiBaseUrl = getApiBaseUrl();
+    let pollTimer = null;
+
+    async function loadEntries() {
+        try {
+            const response = await fetch(`${apiBaseUrl}/api/entries`);
+            if (!response.ok) {
+                throw new Error("Unable to load entries.");
+            }
+
+            const payload = await response.json();
+            const entries = Array.isArray(payload.entries) ? payload.entries : [];
+            renderEntries(entries);
+            setMessage(errorElement, "");
+            if (updatedElement) {
+                updatedElement.textContent = `Updated ${formatDateTime(new Date())}`;
+            }
+        } catch (error) {
+            setMessage(
+                errorElement,
+                "Unable to load shared entries from the server.",
+            );
+        }
+    }
+
+    function renderEntries(entries) {
+        tableBody.replaceChildren();
+        const hasEntries = entries.length > 0;
+        if (emptyState) {
+            emptyState.hidden = hasEntries;
+        }
+        tableBody.closest("table")?.toggleAttribute("hidden", !hasEntries);
+
+        entries.forEach((entry) => {
+            const row = document.createElement("tr");
+            const values = [
+                entry.date,
+                entry.time,
+                entry.boxNumber,
+                entry.product,
+                entry.netWeight,
+                entry.destination,
+                entry.operatorName,
+            ];
+            values.forEach((value) => {
+                const cell = document.createElement("td");
+                cell.textContent = value || "";
+                row.append(cell);
+            });
+            tableBody.append(row);
+        });
+    }
+
+    loadEntries();
+    pollTimer = window.setInterval(loadEntries, 4000);
+    window.addEventListener("pagehide", () => {
+        if (pollTimer) {
+            window.clearInterval(pollTimer);
+        }
+    });
 }
