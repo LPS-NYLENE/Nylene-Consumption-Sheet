@@ -2,27 +2,29 @@ const express = require("express");
 const cors = require("cors");
 const XLSX = require("xlsx");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
-// Express API that accepts form submissions and writes rows to Excel.
+// Intranet web server: one host serves the UI and stores all saved rows.
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number.parseInt(process.env.PORT || "3000", 10);
+const HOST = process.env.HOST || "0.0.0.0";
+const ALLOW_PUBLIC = parseBoolean(process.env.ALLOW_PUBLIC, false);
+const CORS_ORIGIN = getTrimmedString(process.env.CORS_ORIGIN);
 const PUBLIC_FILES = new Set([
     "app.js",
     "destination.html",
     "favico.svg",
     "index.html",
+    "records.html",
     "style.css",
     "summary.html",
 ]);
-// const WINDOWS_DEFAULT_FILE_PATH = "Z:\\Nylene consumption sheet.xlsx";
-const WINDOWS_DEFAULT_FILE_PATH = "G:\\Installed Software\\1 Temp\\1 Temp\\Cool Room Consumption Folder\\Nylene consumption sheet.xlsx"
 const LOCAL_DEFAULT_FILE_PATH = path.join(
     __dirname,
     "data",
     "consumption-sheet.xlsx",
 );
-// const FILE_PATH = "Z:\Nylene consumption sheet.xlsx"
 const SHEET_NAME = "Sheet1";
 const HEADERS = [
     "Box Number",
@@ -37,11 +39,35 @@ const HEADERS = [
 // Excel path used by the save endpoint (override with EXCEL_FILE_PATH).
 const FILE_PATH = getExcelFilePath();
 
-app.use(cors());
+app.disable("x-powered-by");
+app.set("trust proxy", false);
+app.use(restrictToIntranet);
+if (CORS_ORIGIN) {
+    app.use(cors({ origin: CORS_ORIGIN }));
+}
 app.use(express.json({ limit: "1mb" }));
+app.use(noCacheHtml);
 
 app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "index.html"));
+    sendPublicFile(res, "index.html");
+});
+
+app.get("/health", (req, res) => {
+    res.json({
+        ok: true,
+        service: "nylene-consumption-sheet",
+        mode: ALLOW_PUBLIC ? "open" : "intranet",
+    });
+});
+
+app.get("/api/entries", async (req, res) => {
+    try {
+        const entries = await withExcelLock(() => readEntries());
+        return res.json({ entries });
+    } catch (error) {
+        console.error(`Failed to read Excel file at ${FILE_PATH}.`, error);
+        return res.status(500).json({ error: "Unable to read saved entries." });
+    }
 });
 
 app.get("/:file", (req, res, next) => {
@@ -50,16 +76,28 @@ app.get("/:file", (req, res, next) => {
         return next();
     }
 
-    return res.sendFile(path.join(__dirname, fileName));
+    return sendPublicFile(res, fileName);
 });
+
+function parseBoolean(value, fallback) {
+    if (value === undefined || value === null || value === "") {
+        return fallback;
+    }
+
+    const normalized = String(value).trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) {
+        return true;
+    }
+    if (["0", "false", "no", "off"].includes(normalized)) {
+        return false;
+    }
+
+    return fallback;
+}
 
 function getExcelFilePath() {
     if (process.env.EXCEL_FILE_PATH) {
         return path.resolve(process.env.EXCEL_FILE_PATH);
-    }
-
-    if (process.platform === "win32") {
-        return WINDOWS_DEFAULT_FILE_PATH;
     }
 
     return path.resolve(LOCAL_DEFAULT_FILE_PATH);
@@ -69,8 +107,126 @@ function getTrimmedString(value) {
     return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeHeaderValue(value) {
-    return getTrimmedString(value).toLowerCase();
+function sendPublicFile(res, fileName) {
+    return res.sendFile(path.join(__dirname, fileName));
+}
+
+function noCacheHtml(req, res, next) {
+    if (req.path === "/" || req.path.endsWith(".html")) {
+        res.setHeader("Cache-Control", "no-store");
+    }
+    next();
+}
+
+function normalizeIp(rawIp) {
+    if (!rawIp) {
+        return "";
+    }
+
+    let ip = String(rawIp).trim();
+    if (ip.startsWith("::ffff:")) {
+        ip = ip.slice(7);
+    }
+    if (ip === "::1") {
+        return "127.0.0.1";
+    }
+
+    return ip;
+}
+
+function isPrivateOrLocalIpv4(ip) {
+    const parts = ip.split(".").map((part) => Number(part));
+    if (
+        parts.length !== 4 ||
+        parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
+    ) {
+        return false;
+    }
+
+    const [first, second] = parts;
+    if (first === 127 || first === 10) {
+        return true;
+    }
+    if (first === 192 && second === 168) {
+        return true;
+    }
+    if (first === 172 && second >= 16 && second <= 31) {
+        return true;
+    }
+    if (first === 169 && second === 254) {
+        return true;
+    }
+
+    return false;
+}
+
+function isPrivateOrLocalIpv6(ip) {
+    const lower = ip.toLowerCase();
+    if (lower === "::1") {
+        return true;
+    }
+    if (lower.startsWith("fe80:")) {
+        return true;
+    }
+
+    const firstHextet = lower.split(":", 1)[0];
+    if (firstHextet.length >= 2) {
+        const prefix = firstHextet.slice(0, 2);
+        if (prefix === "fc" || prefix === "fd") {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function isAllowedClientIp(rawIp, allowPublic = ALLOW_PUBLIC) {
+    if (allowPublic) {
+        return true;
+    }
+
+    const ip = normalizeIp(rawIp);
+    if (!ip) {
+        return false;
+    }
+    if (ip.includes(".")) {
+        return isPrivateOrLocalIpv4(ip);
+    }
+
+    return isPrivateOrLocalIpv6(ip);
+}
+
+function restrictToIntranet(req, res, next) {
+    const clientIp = req.socket?.remoteAddress;
+    if (isAllowedClientIp(clientIp)) {
+        return next();
+    }
+
+    return res.status(403).json({
+        error: "This application is only available on the company intranet.",
+    });
+}
+
+function getLanAddresses() {
+    const addresses = [];
+    const interfaces = os.networkInterfaces();
+
+    for (const name of Object.keys(interfaces)) {
+        for (const networkInterface of interfaces[name] || []) {
+            if (networkInterface.internal) {
+                continue;
+            }
+
+            const family = networkInterface.family;
+            if (family !== "IPv4" && family !== 4) {
+                continue;
+            }
+
+            addresses.push(networkInterface.address);
+        }
+    }
+
+    return addresses;
 }
 
 function headersMatch(expected, actual) {
@@ -80,8 +236,8 @@ function headersMatch(expected, actual) {
 
     return expected.every(
         (header, index) =>
-            normalizeHeaderValue(actual[index]) ===
-            normalizeHeaderValue(header),
+            getTrimmedString(actual[index]).toLowerCase() ===
+            header.toLowerCase(),
     );
 }
 
@@ -150,7 +306,6 @@ function getOrCreateWorksheet(workbook) {
             header: 1,
             range: 0,
         })[0];
-        // if (!headerRow || headerRow.length < HEADERS.lengthds) {
         if (!headersMatch(HEADERS, headerRow)) {
             XLSX.utils.sheet_add_aoa(worksheet, [HEADERS], { origin: "A1" });
         }
@@ -267,7 +422,9 @@ function sortRowsNewestFirst(rows) {
         }))
         .sort((left, right) => {
             if (left.timestamp !== null && right.timestamp !== null) {
-                return right.timestamp - left.timestamp || left.index - right.index;
+                return (
+                    right.timestamp - left.timestamp || left.index - right.index
+                );
             }
             if (left.timestamp !== null) {
                 return -1;
@@ -296,8 +453,62 @@ function addNewestRowFirst(workbook, worksheet, row) {
     ]);
 }
 
-app.post("/save", (req, res) => {
-    // Validate the request and return field-level errors if needed.
+function rowToEntry(row) {
+    return {
+        boxNumber: getTrimmedString(String(row[0] ?? "")),
+        product: getTrimmedString(String(row[1] ?? "")),
+        operatorName: getTrimmedString(String(row[2] ?? "")),
+        destination: getTrimmedString(String(row[3] ?? "")),
+        date: getTrimmedString(String(row[4] ?? "")),
+        time: getTrimmedString(String(row[5] ?? "")),
+        netWeight: getTrimmedString(String(row[6] ?? "")),
+    };
+}
+
+function readEntries() {
+    if (!fs.existsSync(FILE_PATH)) {
+        return [];
+    }
+
+    const workbook = loadWorkbook(FILE_PATH);
+    const worksheet = workbook.Sheets[SHEET_NAME];
+    if (!worksheet) {
+        return [];
+    }
+
+    const existingRows = XLSX.utils.sheet_to_json(worksheet, {
+        header: 1,
+        defval: "",
+        blankrows: false,
+        raw: false,
+    });
+
+    return existingRows.slice(1).map(rowToEntry);
+}
+
+let excelChain = Promise.resolve();
+
+function withExcelLock(task) {
+    const run = excelChain.then(
+        () => task(),
+        () => task(),
+    );
+    excelChain = run.then(
+        () => undefined,
+        () => undefined,
+    );
+    return run;
+}
+
+function saveRow(row) {
+    ensureDirectoryExists(FILE_PATH);
+    const workbook = loadWorkbook(FILE_PATH);
+    const worksheet = getOrCreateWorksheet(workbook);
+    addNewestRowFirst(workbook, worksheet, row);
+    XLSX.writeFile(workbook, FILE_PATH);
+}
+
+app.post("/save", async (req, res) => {
     const {
         boxNumber,
         product,
@@ -314,7 +525,6 @@ app.post("/save", (req, res) => {
         });
     }
 
-    // Capture date and time separately to match the Excel columns.
     const now = new Date();
     const date = now.toLocaleDateString("en-US");
     const time = now.toLocaleTimeString("en-US", {
@@ -333,30 +543,63 @@ app.post("/save", (req, res) => {
     ];
 
     try {
-       // Keep the newest submission directly under the header row.
-        ensureDirectoryExists(FILE_PATH);
-        const workbook = loadWorkbook(FILE_PATH);
-        const worksheet = getOrCreateWorksheet(workbook);
-
-        // XLSX.utils.sheet_add_aoa(worksheet, [row], { origin: -1 }--);
-         addNewestRowFirst(workbook, worksheet, row);
-        XLSX.writeFile(workbook, FILE_PATH);
-
-        // return res.json({ success: true });
-          return res.json({ success: true, filePath: FILE_PATH });
+        await withExcelLock(() => saveRow(row));
+        return res.json({ success: true });
     } catch (error) {
-        // console.error("Failed to save data to Excel file.", error);
-        // return res.status(500).json({ error: "Unable to save data." });
-        console.error(`Failed to save data to Excel file at ${FILE_PATH}.`, error);
+        console.error(
+            `Failed to save data to Excel file at ${FILE_PATH}.`,
+            error,
+        );
         return res.status(500).json({
             error: "Unable to save data.",
-            filePath: FILE_PATH,
         });
     }
 });
 
-app.listen(PORT, () => {
-    // Simple startup log for local development.
-    console.log(`Server running at http://localhost:${PORT}`);
-    console.log(`Excel file path: ${FILE_PATH}`);
+app.use((req, res) => {
+    res.status(404).json({ error: "Not found." });
 });
+
+function logStartup(server) {
+    const address = server.address();
+    const boundPort =
+        address && typeof address === "object" ? address.port : PORT;
+    const lanAddresses = getLanAddresses();
+    console.log("Nylene Consumption Sheet intranet server");
+    console.log(`Listening on ${HOST}:${boundPort}`);
+    console.log(`Local URL:     http://127.0.0.1:${boundPort}`);
+    if (lanAddresses.length > 0) {
+        for (const lanAddress of lanAddresses) {
+            console.log(`Intranet URL:  http://${lanAddress}:${boundPort}`);
+        }
+    } else {
+        console.log(
+            "No LAN address detected. Other stations can use this computer's hostname or IP.",
+        );
+    }
+    console.log(`Excel file:    ${FILE_PATH}`);
+    console.log(
+        ALLOW_PUBLIC
+            ? "Access policy: public IPs allowed (ALLOW_PUBLIC=true)"
+            : "Access policy: company intranet / private network only",
+    );
+}
+
+function startServer() {
+    const server = app.listen(PORT, HOST, () => {
+        logStartup(server);
+    });
+    return server;
+}
+
+if (require.main === module) {
+    startServer();
+}
+
+module.exports = {
+    app,
+    startServer,
+    isAllowedClientIp,
+    normalizeIp,
+    getExcelFilePath,
+};

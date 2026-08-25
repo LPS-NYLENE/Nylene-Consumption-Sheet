@@ -33,6 +33,34 @@ body {
     color: #52606d;
 }
 
+.page--wide {
+    max-width: 1100px;
+}
+
+.site-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.site-nav a {
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    color: #2563eb;
+    border: 1px solid #bfdbfe;
+    background: #ffffff;
+}
+
+.site-nav a[aria-current="page"] {
+    background: #2563eb;
+    color: #ffffff;
+    border-color: #2563eb;
+}
+
 .card {
     background: #ffffff;
     border-radius: 16px;
@@ -185,6 +213,42 @@ body {
     display: flex;
     gap: 12px;
     margin-top: 24px;
+}
+
+.records__meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: baseline;
+    margin-bottom: 8px;
+}
+
+.records__empty {
+    margin: 0;
+    color: #52606d;
+}
+
+.records__table-wrap {
+    overflow-x: auto;
+}
+
+.records-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.records-table th,
+.records-table td {
+    text-align: left;
+    padding: 10px 8px;
+    border-bottom: 1px solid #edf2f7;
+    white-space: nowrap;
+}
+
+.records-table th {
+    color: #52606d;
+    font-weight: 600;
 }
 
 @media (max-width: 520px) {

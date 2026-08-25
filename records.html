@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Recent Entries</title>
+        <link rel="stylesheet" href="style.css" />
+        <link rel="icon" href="favico.svg" type="image/svg" />
+    </head>
+    <body data-page="records">
+        <main class="page page--wide">
+            <header class="page__header">
+                <h1>Recent Entries</h1>
+                <p>
+                    These rows come from the central workbook on the intranet
+                    server. Saves from any station appear here.
+                </p>
+                <nav class="site-nav" aria-label="Application">
+                    <a href="index.html" data-nav="form">New Entry</a>
+                    <a href="records.html" data-nav="records">Recent Entries</a>
+                </nav>
+            </header>
+
+            <section class="card">
+                <div class="records__meta">
+                    <p id="records-updated" class="form__hint"></p>
+                    <p
+                        id="records-error"
+                        class="form__error"
+                        aria-live="polite"
+                    ></p>
+                </div>
+                <p id="records-empty" class="records__empty">
+                    No entries yet. Saves from any station appear here.
+                </p>
+                <div class="records__table-wrap">
+                    <table class="records-table" hidden>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Time</th>
+                                <th>Box Number</th>
+                                <th>Product</th>
+                                <th>Net Weight</th>
+                                <th>Destination</th>
+                                <th>Operator</th>
+                            </tr>
+                        </thead>
+                        <tbody id="records-body"></tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+        <script src="app.js" defer></script>
+    </body>
+</html>
