@@ -104,6 +104,11 @@ function getExcelFilePath() {
       return "G:\\Installed Software\\1 Temp\\1 Temp\\Cool Room Consumption Folder\\Nylene consumption sheet.xlsx";
 }
 
+function getLedgerFilePath(excelPath = FILE_PATH) {
+    const parsed = path.parse(excelPath);
+    return path.join(parsed.dir, `${parsed.name}.ledger.json`);
+}
+
 function getTrimmedString(value) {
     return typeof value === "string" ? value.trim() : "";
 }
@@ -438,22 +443,6 @@ function sortRowsNewestFirst(rows) {
         .map(({ row }) => row);
 }
 
-function addNewestRowFirst(workbook, worksheet, row) {
-    const existingRows = XLSX.utils.sheet_to_json(worksheet, {
-        header: 1,
-        defval: "",
-        blankrows: false,
-        raw: false,
-    });
-    const dataRows = existingRows.slice(1);
-    const newestFirstRows = sortRowsNewestFirst([row, ...dataRows]);
-
-    workbook.Sheets[SHEET_NAME] = XLSX.utils.aoa_to_sheet([
-        HEADERS,
-        ...newestFirstRows,
-    ]);
-}
-
 function rowToEntry(row) {
     return {
         boxNumber: getTrimmedString(String(row[0] ?? "")),
@@ -466,28 +455,113 @@ function rowToEntry(row) {
     };
 }
 
-function readEntries() {
+function entryToRow(entry) {
+    return [
+        entry.boxNumber,
+        entry.product,
+        entry.operatorName,
+        entry.destination,
+        entry.date,
+        entry.time,
+        entry.netWeight,
+    ];
+}
+
+function isFileLockError(error) {
+    const code = String(error?.code || "").toUpperCase();
+    if (["EBUSY", "EPERM", "EACCES", "EAGAIN"].includes(code)) {
+        return true;
+    }
+
+    const message = String(error?.message || "").toLowerCase();
+    return (
+        message.includes("ebusy") ||
+        message.includes("eperm") ||
+        message.includes("eacces") ||
+        message.includes("locked") ||
+        message.includes("sharing violation") ||
+        message.includes("resource busy")
+    );
+}
+
+function readEntriesFromExcel() {
     if (!fs.existsSync(FILE_PATH)) {
         return [];
     }
 
-    const workbook = loadWorkbook(FILE_PATH);
-    const worksheet = workbook.Sheets[SHEET_NAME];
-    if (!worksheet) {
-        return [];
+    try {
+        const workbook = loadWorkbook(FILE_PATH);
+        const worksheet = workbook.Sheets[SHEET_NAME];
+        if (!worksheet) {
+            return [];
+        }
+
+        const existingRows = XLSX.utils.sheet_to_json(worksheet, {
+            header: 1,
+            defval: "",
+            blankrows: false,
+            raw: false,
+        });
+
+        return sortRowsNewestFirst(existingRows.slice(1)).map(rowToEntry);
+    } catch (error) {
+        if (isFileLockError(error)) {
+            return [];
+        }
+        throw error;
+    }
+}
+
+function loadLedger() {
+    const ledgerPath = getLedgerFilePath();
+    if (fs.existsSync(ledgerPath)) {
+        try {
+            const parsed = JSON.parse(fs.readFileSync(ledgerPath, "utf8"));
+            if (Array.isArray(parsed?.entries)) {
+                return parsed.entries.map((entry) =>
+                    rowToEntry(entryToRow(entry)),
+                );
+            }
+        } catch (error) {
+            console.warn(
+                `Could not read ledger at ${ledgerPath}. Falling back to Excel.`,
+                error,
+            );
+        }
     }
 
-    const existingRows = XLSX.utils.sheet_to_json(worksheet, {
-        header: 1,
-        defval: "",
-        blankrows: false,
-        raw: false,
-    });
+    return readEntriesFromExcel();
+}
 
-    return existingRows.slice(1).map(rowToEntry);
+function persistLedger(entries) {
+    const ledgerPath = getLedgerFilePath();
+    ensureDirectoryExists(ledgerPath);
+    fs.writeFileSync(
+        ledgerPath,
+        `${JSON.stringify({ entries }, null, 2)}\n`,
+        "utf8",
+    );
+}
+
+function writeWorkbookFromEntries(entries) {
+    ensureDirectoryExists(FILE_PATH);
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet([
+        HEADERS,
+        ...entries.map(entryToRow),
+    ]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, SHEET_NAME);
+    XLSX.writeFile(workbook, FILE_PATH);
+}
+
+function readEntries() {
+    return loadLedger();
 }
 
 let excelChain = Promise.resolve();
+let excelSyncPending = false;
+let loggedExcelLock = false;
+let excelFlushTimer = null;
 
 function withExcelLock(task) {
     const run = excelChain.then(
@@ -501,12 +575,100 @@ function withExcelLock(task) {
     return run;
 }
 
+function markExcelLocked() {
+    excelSyncPending = true;
+    if (loggedExcelLock) {
+        return;
+    }
+    loggedExcelLock = true;
+    console.warn(
+        `Excel workbook is open or locked at ${FILE_PATH}. Saves are kept and will be written when the file is closed.`,
+    );
+}
+
+function markExcelSynced() {
+    excelSyncPending = false;
+    if (loggedExcelLock) {
+        console.log(`Excel workbook updated at ${FILE_PATH}.`);
+        loggedExcelLock = false;
+    }
+}
+
+function tryWriteExcel(entries) {
+    try {
+        writeWorkbookFromEntries(entries);
+        markExcelSynced();
+        return true;
+    } catch (error) {
+        if (isFileLockError(error)) {
+            markExcelLocked();
+            return false;
+        }
+        throw error;
+    }
+}
+
 function saveRow(row) {
-    ensureDirectoryExists(FILE_PATH);
-    const workbook = loadWorkbook(FILE_PATH);
-    const worksheet = getOrCreateWorksheet(workbook);
-    addNewestRowFirst(workbook, worksheet, row);
-    XLSX.writeFile(workbook, FILE_PATH);
+    const entry = rowToEntry(row);
+    const entries = [entry, ...loadLedger()];
+    persistLedger(entries);
+    try {
+        const excelSynced = tryWriteExcel(entries);
+        return { excelSynced };
+    } catch (error) {
+        console.error(`Failed to update Excel file at ${FILE_PATH}.`, error);
+        excelSyncPending = true;
+        return { excelSynced: false };
+    }
+}
+
+function syncExcelFromLedger() {
+    const entries = loadLedger();
+    if (entries.length === 0 && !fs.existsSync(FILE_PATH) && !excelSyncPending) {
+        return true;
+    }
+    return tryWriteExcel(entries);
+}
+
+function flushExcel() {
+    return withExcelLock(() => {
+        if (!excelSyncPending) {
+            return true;
+        }
+        return syncExcelFromLedger();
+    });
+}
+
+function startExcelFlushTimer() {
+    if (excelFlushTimer) {
+        return;
+    }
+
+    const retryMs = Number.parseInt(process.env.EXCEL_RETRY_MS || "5000", 10);
+    if (!Number.isFinite(retryMs) || retryMs <= 0) {
+        return;
+    }
+
+    excelFlushTimer = setInterval(() => {
+        flushExcel().catch((error) => {
+            console.error(
+                `Failed to update Excel file at ${FILE_PATH}.`,
+                error,
+            );
+        });
+    }, retryMs);
+
+    if (typeof excelFlushTimer.unref === "function") {
+        excelFlushTimer.unref();
+    }
+}
+
+function stopExcelFlushTimer() {
+    if (!excelFlushTimer) {
+        return;
+    }
+    clearInterval(excelFlushTimer);
+    excelFlushTimer = null;
 }
 
 app.post("/save", async (req, res) => {
@@ -544,11 +706,14 @@ app.post("/save", async (req, res) => {
     ];
 
     try {
-        await withExcelLock(() => saveRow(row));
-        return res.json({ success: true });
+        const result = await withExcelLock(() => saveRow(row));
+        return res.json({
+            success: true,
+            excelSynced: result.excelSynced !== false,
+        });
     } catch (error) {
         console.error(
-            `Failed to save data to Excel file at ${FILE_PATH}.`,
+            `Failed to save data at ${getLedgerFilePath()}.`,
             error,
         );
         return res.status(500).json({
@@ -579,6 +744,7 @@ function logStartup(server) {
         );
     }
     console.log(`Excel file:    ${FILE_PATH}`);
+    console.log(`Ledger file:   ${getLedgerFilePath()}`);
     console.log(
         ALLOW_PUBLIC
             ? "Access policy: public IPs allowed (ALLOW_PUBLIC=true)"
@@ -589,7 +755,9 @@ function logStartup(server) {
 function startServer() {
     const server = app.listen(PORT, HOST, () => {
         logStartup(server);
+        startExcelFlushTimer();
     });
+    server.on("close", stopExcelFlushTimer);
     return server;
 }
 
@@ -601,6 +769,9 @@ module.exports = {
     app,
     startServer,
     isAllowedClientIp,
+    isFileLockError,
     normalizeIp,
     getExcelFilePath,
+    getLedgerFilePath,
+    flushExcel,
 };
