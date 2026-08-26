@@ -22,5 +22,5 @@
     "express": "^5.2.1",
     "xlsx": "^0.18.5"
   },
-  "description": "Intranet web app for the Nylene consumption sheet. One internal server hosts the UI and the shared Excel workbook for every station on the company network."
+  "description": "Intranet web app for the Nylene consumption sheet. One internal server hosts the UI and the shared Excel workbook for every station on the company network.."
 }
