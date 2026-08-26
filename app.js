@@ -525,7 +525,14 @@ function initSummaryPage() {
                     throw new Error("Save request failed.");
                 }
 
-                window.alert("Saved to Excel.");
+                const payload = await response.json().catch(() => ({}));
+                if (payload.excelSynced === false) {
+                    window.alert(
+                        "Saved. Close the Excel workbook so the file can update.",
+                    );
+                } else {
+                    window.alert("Saved to Excel.");
+                }
                 // Keep the button disabled because a redirect is scheduled.
                 shouldUnlock = false;
 

@@ -17,7 +17,13 @@ process.env.EXCEL_FILE_PATH = excelPath;
 process.env.ALLOW_PUBLIC = "false";
 delete process.env.CORS_ORIGIN;
 
-const { isAllowedClientIp, startServer } = require("../server.cjs");
+const {
+    isAllowedClientIp,
+    isFileLockError,
+    startServer,
+    flushExcel,
+    getLedgerFilePath,
+} = require("../server.cjs");
 
 function request(port, { method = "GET", url = "/", body } = {}) {
     return new Promise((resolve, reject) => {
@@ -73,6 +79,16 @@ function sampleEntry(boxNumber) {
     };
 }
 
+test("isFileLockError detects Windows Excel lock codes", () => {
+    assert.equal(isFileLockError({ code: "EBUSY" }), true);
+    assert.equal(isFileLockError({ code: "EPERM" }), true);
+    assert.equal(
+        isFileLockError({ message: "A sharing violation occurred" }),
+        true,
+    );
+    assert.equal(isFileLockError({ code: "ENOENT" }), false);
+});
+
 test("isAllowedClientIp allows intranet and loopback addresses only", () => {
     assert.equal(isAllowedClientIp("127.0.0.1", false), true);
     assert.equal(isAllowedClientIp("::1", false), true);
@@ -96,6 +112,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     t.after(() => {
         server.close();
         fs.rmSync(excelPath, { force: true });
+        fs.rmSync(getLedgerFilePath(), { force: true });
     });
 
     const home = await request(port, { url: "/" });
@@ -158,5 +175,55 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     assert.deepEqual(
         new Set(savedBoxes),
         new Set(["BOXAAA1", "BOXBBB2", "BOXCCC3"]),
+    );
+
+    const originalWriteFile = XLSX.writeFile;
+    XLSX.writeFile = () => {
+        const error = new Error(
+            "EBUSY: resource busy or locked, open 'workbook.xlsx'",
+        );
+        error.code = "EBUSY";
+        throw error;
+    };
+
+    try {
+        const lockedSave = await request(port, {
+            method: "POST",
+            url: "/save",
+            body: sampleEntry("BOXLOCK4"),
+        });
+        assert.equal(lockedSave.status, 200);
+        assert.equal(lockedSave.json.success, true);
+        assert.equal(lockedSave.json.excelSynced, false);
+
+        const listingWhileLocked = await request(port, { url: "/api/entries" });
+        const lockedBoxes = listingWhileLocked.json.entries.map(
+            (entry) => entry.boxNumber,
+        );
+        assert.equal(lockedBoxes.includes("BOXLOCK4"), true);
+
+        const workbookWhileLocked = XLSX.readFile(excelPath);
+        const rowsWhileLocked = XLSX.utils.sheet_to_json(
+            workbookWhileLocked.Sheets.Sheet1,
+            { header: 1 },
+        );
+        assert.equal(
+            rowsWhileLocked.slice(1).map((row) => row[0]).includes("BOXLOCK4"),
+            false,
+        );
+    } finally {
+        XLSX.writeFile = originalWriteFile;
+    }
+
+    const flushed = await flushExcel();
+    assert.equal(flushed, true);
+    const workbookAfterFlush = XLSX.readFile(excelPath);
+    const rowsAfterFlush = XLSX.utils.sheet_to_json(
+        workbookAfterFlush.Sheets.Sheet1,
+        { header: 1 },
+    );
+    assert.equal(
+        rowsAfterFlush.slice(1).map((row) => row[0]).includes("BOXLOCK4"),
+        true,
     );
 });
