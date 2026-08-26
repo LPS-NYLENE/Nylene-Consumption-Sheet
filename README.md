@@ -74,8 +74,11 @@ Every station posts to the same `/save` endpoint, so a save from one computer
 is stored in that workbook and appears under **Recent Entries** on the other
 stations.
 
-Leave the workbook closed in Excel while the server is writing, or Windows may
-lock the file.
+You can open the workbook in Excel to view it. If Excel has the file open,
+Windows locks it and the app cannot rewrite the `.xlsx` until it is closed.
+Saves still succeed: they are kept in a `.ledger.json` file next to the
+workbook and written into Excel automatically after the file is closed.
+Re-open the workbook (or refresh) to see the newest rows.
 
 ## Configuration
 
@@ -112,8 +115,9 @@ startup so the app comes back after a reboot.
 **Save fails**
 
 - Confirm the Excel path printed at startup exists and is writable.
-- Close the workbook in Excel if it is open on the server.
 - Confirm two stations are not pointing at two different servers.
+- If Excel is open, the app should still save. Close and reopen the workbook
+  to see new rows. Check the server window for a message that the file is locked.
 
 **Port already in use**
 
