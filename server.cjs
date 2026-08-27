@@ -101,7 +101,7 @@ function getExcelFilePath() {
     }
 
     // return path.resolve(LOCAL_DEFAULT_FILE_PATH);
-      return "G:\\Installed Software\\1 Temp\\1 Temp\\Cool Room Consumption Folder\\Nylene consumption sheet.xlsx";
+      return "G:\Quality Assurrance\Poly consumption sheets\Digital PCons 2026\Nylene Consumption Sheet 2026.xlsx";
 }
 
 function getLedgerFilePath(excelPath = FILE_PATH) {
