@@ -1,5 +1,8 @@
 # Nylene Consumption Sheet
 
+**Operators:** use [HOW_TO_USE.md](HOW_TO_USE.md) for step-by-step training on
+how to enter records.
+
 Internal web application for recording chip consumption. One company server
 hosts the application and the shared Excel workbook. Workstations only need a
 browser on the company network.
