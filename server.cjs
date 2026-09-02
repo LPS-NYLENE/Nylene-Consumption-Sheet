@@ -35,6 +35,14 @@ const HEADERS = [
     "Time",
     "Net Weight",
 ];
+const DISPLAY_TIME_OFFSET_HOURS = 3;
+const DUPLICATE_BOX_MESSAGE =
+    "The box with this Box number has been consumed try another box";
+const REUSABLE_BOX_IDENTIFIERS = new Set(
+    ["A-Bulk", "B-Bulk", "C-Bulk", "BASF", "AdvanSix", "MOHAWK"].map((value) =>
+        value.toLowerCase(),
+    ),
+);
 
 // Excel path used by the save endpoint (override with EXCEL_FILE_PATH).
 const FILE_PATH = getExcelFilePath();
@@ -112,6 +120,49 @@ function getLedgerFilePath(excelPath = FILE_PATH) {
 
 function getTrimmedString(value) {
     return typeof value === "string" ? value.trim() : "";
+}
+
+function shiftDisplayTime(date, hours = DISPLAY_TIME_OFFSET_HOURS) {
+    return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function formatRecordedStamp(date = new Date()) {
+    const recorded = shiftDisplayTime(date);
+    return {
+        recorded,
+        date: recorded.toLocaleDateString("en-US"),
+        time: recorded.toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+        }),
+    };
+}
+
+function normalizeBoxNumberKey(value) {
+    return getTrimmedString(String(value ?? "")).toLowerCase();
+}
+
+function shouldEnforceUniqueBoxNumber(boxNumber, chipType) {
+    const type = getTrimmedString(chipType).toLowerCase();
+    if (type === "bulk" || type === "purchased") {
+        return false;
+    }
+    if (type === "box") {
+        return true;
+    }
+
+    return !REUSABLE_BOX_IDENTIFIERS.has(normalizeBoxNumberKey(boxNumber));
+}
+
+function isBoxNumberConsumed(boxNumber, entries = loadLedger()) {
+    const key = normalizeBoxNumberKey(boxNumber);
+    if (!key) {
+        return false;
+    }
+
+    return entries.some(
+        (entry) => normalizeBoxNumberKey(entry.boxNumber) === key,
+    );
 }
 
 function sendPublicFile(res, fileName) {
@@ -255,6 +306,7 @@ function validatePayload(body) {
     const operatorName = getTrimmedString(body?.operatorName);
     const destination = getTrimmedString(body?.destination);
     const netWeight = getTrimmedString(body?.netWeight);
+    const chipType = getTrimmedString(body?.chipType).toLowerCase();
 
     const missing = [];
     if (!boxNumber) {
@@ -279,6 +331,7 @@ function validatePayload(body) {
         operatorName,
         destination,
         netWeight,
+        chipType,
         missing,
     };
 }
@@ -679,6 +732,7 @@ app.post("/save", async (req, res) => {
         operatorName,
         destination,
         netWeight,
+        chipType,
         missing,
     } = validatePayload(req.body);
 
@@ -689,12 +743,7 @@ app.post("/save", async (req, res) => {
         });
     }
 
-    const now = new Date();
-    const date = now.toLocaleDateString("en-US");
-    const time = now.toLocaleTimeString("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-    });
+    const { date, time, recorded } = formatRecordedStamp();
 
     const row = [
         boxNumber,
@@ -707,12 +756,32 @@ app.post("/save", async (req, res) => {
     ];
 
     try {
-        const result = await withExcelLock(() => saveRow(row));
+        const result = await withExcelLock(() => {
+            if (
+                shouldEnforceUniqueBoxNumber(boxNumber, chipType) &&
+                isBoxNumberConsumed(boxNumber)
+            ) {
+                const error = new Error(DUPLICATE_BOX_MESSAGE);
+                error.code = "DUPLICATE_BOX";
+                throw error;
+            }
+
+            return saveRow(row);
+        });
         return res.json({
             success: true,
             excelSynced: result.excelSynced !== false,
+            date,
+            time,
+            savedAt: recorded.toISOString(),
         });
     } catch (error) {
+        if (error.code === "DUPLICATE_BOX") {
+            return res.status(409).json({
+                error: DUPLICATE_BOX_MESSAGE,
+            });
+        }
+
         console.error(
             `Failed to save data at ${getLedgerFilePath()}.`,
             error,
@@ -775,4 +844,8 @@ module.exports = {
     getExcelFilePath,
     getLedgerFilePath,
     flushExcel,
+    shiftDisplayTime,
+    DISPLAY_TIME_OFFSET_HOURS,
+    DUPLICATE_BOX_MESSAGE,
+    shouldEnforceUniqueBoxNumber,
 };

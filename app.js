@@ -1,5 +1,8 @@
 // Session storage key for persisting in-progress form state on this station.
 const STORAGE_KEY = "productTrackingForm";
+const DISPLAY_TIME_OFFSET_HOURS = 3;
+const DUPLICATE_BOX_MESSAGE =
+    "The box with this Box number has been consumed try another box";
 
 // Map <body data-page=""> values to page setup functions.
 const pageInitializers = {
@@ -99,6 +102,32 @@ function formatDateTime(date) {
         hour: "2-digit",
         minute: "2-digit",
     });
+}
+
+function shiftDisplayTime(date, hours = DISPLAY_TIME_OFFSET_HOURS) {
+    return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+async function isBoxNumberAlreadyConsumed(boxNumber) {
+    const key = normalizeText(boxNumber).toLowerCase();
+    if (!key) {
+        return false;
+    }
+
+    try {
+        const response = await fetch(`${getApiBaseUrl()}/api/entries`);
+        if (!response.ok) {
+            return false;
+        }
+
+        const payload = await response.json().catch(() => ({}));
+        const entries = Array.isArray(payload.entries) ? payload.entries : [];
+        return entries.some(
+            (entry) => normalizeText(entry.boxNumber).toLowerCase() === key,
+        );
+    } catch (error) {
+        return false;
+    }
 }
 
 function initFormPage() {
@@ -285,7 +314,7 @@ function initFormPage() {
     // Start with product enabled and "Purchased" option hidden until selected.
     syncProductSelectForChipType("");
 
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", async (event) => {
         event.preventDefault();
         setMessage(errorElement, "");
 
@@ -372,6 +401,15 @@ function initFormPage() {
             setMessage(errorElement, "Please enter first and last name.");
             operatorInput.focus();
             return;
+        }
+
+        if (chipType === "box") {
+            const consumed = await isBoxNumberAlreadyConsumed(chipBoxNumber);
+            if (consumed) {
+                setMessage(errorElement, DUPLICATE_BOX_MESSAGE);
+                chipBoxInput.focus();
+                return;
+            }
         }
 
         // Persist data and move to the destination step.
@@ -504,7 +542,7 @@ function initSummaryPage() {
 
     const initialTimestamp = stored.savedAt
         ? new Date(stored.savedAt)
-        : new Date();
+        : shiftDisplayTime(new Date());
     if (dateTime) {
         dateTime.textContent = formatDateTime(initialTimestamp);
     }
@@ -534,14 +572,17 @@ function initSummaryPage() {
                         netWeight: stored.netWeight,
                         operatorName: stored.operatorName,
                         destination: stored.destination,
+                        chipType: stored.chipType || "",
                     }),
                 });
 
+                const payload = await response.json().catch(() => ({}));
                 if (!response.ok) {
-                    throw new Error("Save request failed.");
+                    throw new Error(
+                        payload.error || "Save failed. Please try again.",
+                    );
                 }
 
-                const payload = await response.json().catch(() => ({}));
                 if (payload.excelSynced === false) {
                     window.alert(
                         "Saved. Close the Excel workbook so the file can update.",
@@ -552,19 +593,23 @@ function initSummaryPage() {
                 // Keep the button disabled because a redirect is scheduled.
                 shouldUnlock = false;
 
-                const savedAt = new Date();
+                const savedAt = payload.savedAt
+                    ? new Date(payload.savedAt)
+                    : shiftDisplayTime(new Date());
+                const savedLabel =
+                    payload.date && payload.time
+                        ? `${payload.date} ${payload.time}`
+                        : formatDateTime(savedAt);
                 setStoredData({
                     ...stored,
                     savedAt: savedAt.toISOString(),
                 });
                 if (dateTime) {
-                    dateTime.textContent = formatDateTime(savedAt);
+                    dateTime.textContent = savedLabel;
                 }
                 setMessage(
                     message,
-                    `Saved at ${formatDateTime(
-                        savedAt,
-                    )}. Redirecting to the first page in 3 seconds.`,
+                    `Saved at ${savedLabel}. Redirecting to the first page in 3 seconds.`,
                 );
                 // Reset any prior redirect timer before starting a new one.
                 if (redirectTimer) {
@@ -575,7 +620,9 @@ function initSummaryPage() {
                     window.location.href = "index.html";
                 }, 3000);
             } catch (error) {
-                window.alert("Save failed. Please try again.");
+                window.alert(
+                    error?.message || "Save failed. Please try again.",
+                );
             } finally {
                 if (shouldUnlock) {
                     saveButton.disabled = false;

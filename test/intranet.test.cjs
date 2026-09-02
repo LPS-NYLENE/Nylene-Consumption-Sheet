@@ -23,6 +23,10 @@ const {
     startServer,
     flushExcel,
     getLedgerFilePath,
+    shiftDisplayTime,
+    DISPLAY_TIME_OFFSET_HOURS,
+    DUPLICATE_BOX_MESSAGE,
+    shouldEnforceUniqueBoxNumber,
 } = require("../server.cjs");
 
 function request(port, { method = "GET", url = "/", body } = {}) {
@@ -69,15 +73,40 @@ function request(port, { method = "GET", url = "/", body } = {}) {
     });
 }
 
-function sampleEntry(boxNumber) {
+function sampleEntry(boxNumber, extra = {}) {
     return {
         boxNumber,
         product: "CSDN-INT",
         operatorName: "Test Operator",
         destination: "DCA",
         netWeight: "12.5",
+        chipType: "box",
+        ...extra,
     };
 }
+
+test("shiftDisplayTime moves clocks three hours forward", () => {
+    const sevenAm = new Date(2026, 8, 2, 7, 0, 0);
+    const shifted = shiftDisplayTime(sevenAm);
+    assert.equal(shifted.getHours(), 10);
+    assert.equal(shifted.getMinutes(), 0);
+    assert.equal(shifted.getDate(), 2);
+    assert.equal(DISPLAY_TIME_OFFSET_HOURS, 3);
+
+    const tenPm = new Date(2026, 8, 2, 22, 15, 0);
+    const nextDay = shiftDisplayTime(tenPm);
+    assert.equal(nextDay.getHours(), 1);
+    assert.equal(nextDay.getMinutes(), 15);
+    assert.equal(nextDay.getDate(), 3);
+});
+
+test("shouldEnforceUniqueBoxNumber applies to scanned boxes only", () => {
+    assert.equal(shouldEnforceUniqueBoxNumber("AD1620301", "box"), true);
+    assert.equal(shouldEnforceUniqueBoxNumber("A-Bulk", "bulk"), false);
+    assert.equal(shouldEnforceUniqueBoxNumber("BASF", "purchased"), false);
+    assert.equal(shouldEnforceUniqueBoxNumber("A-Bulk", ""), false);
+    assert.equal(shouldEnforceUniqueBoxNumber("AD1620301", ""), true);
+});
 
 test("isFileLockError detects Windows Excel lock codes", () => {
     assert.equal(isFileLockError({ code: "EBUSY" }), true);
@@ -139,13 +168,38 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     });
     assert.equal(missing.status, 400);
 
+    const beforeSave = Date.now();
     const first = await request(port, {
         method: "POST",
         url: "/save",
         body: sampleEntry("BOXAAA1"),
     });
+    const afterSave = Date.now();
     assert.equal(first.status, 200);
     assert.equal(first.json.success, true);
+    assert.ok(first.json.date);
+    assert.ok(first.json.time);
+
+    const savedAtMs = new Date(first.json.savedAt).getTime();
+    const offsetMs = DISPLAY_TIME_OFFSET_HOURS * 60 * 60 * 1000;
+    assert.ok(savedAtMs >= beforeSave + offsetMs - 2000);
+    assert.ok(savedAtMs <= afterSave + offsetMs + 2000);
+
+    const duplicate = await request(port, {
+        method: "POST",
+        url: "/save",
+        body: sampleEntry("BOXAAA1"),
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.json.error, DUPLICATE_BOX_MESSAGE);
+
+    const duplicateCase = await request(port, {
+        method: "POST",
+        url: "/save",
+        body: sampleEntry("boxaaa1"),
+    });
+    assert.equal(duplicateCase.status, 409);
+    assert.equal(duplicateCase.json.error, DUPLICATE_BOX_MESSAGE);
 
     const [second, third] = await Promise.all([
         request(port, {
@@ -226,4 +280,17 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
         rowsAfterFlush.slice(1).map((row) => row[0]).includes("BOXLOCK4"),
         true,
     );
+
+    const bulkOne = await request(port, {
+        method: "POST",
+        url: "/save",
+        body: sampleEntry("A-Bulk", { chipType: "bulk" }),
+    });
+    const bulkTwo = await request(port, {
+        method: "POST",
+        url: "/save",
+        body: sampleEntry("A-Bulk", { chipType: "bulk" }),
+    });
+    assert.equal(bulkOne.status, 200);
+    assert.equal(bulkTwo.status, 200);
 });
