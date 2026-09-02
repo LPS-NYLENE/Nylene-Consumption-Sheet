@@ -238,6 +238,22 @@ function initFormPage() {
         }
     });
 
+    // Enter after a box number should move to net weight, not submit
+    // (which would otherwise focus the still-empty product select).
+    chipBoxInput.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") {
+            return;
+        }
+
+        event.preventDefault();
+
+        if (!normalizeText(chipBoxInput.value)) {
+            return;
+        }
+
+        netWeightInput.focus();
+    });
+
     if (stored.chipBoxNumber) {
         chipBoxInput.value = stored.chipBoxNumber;
     }
@@ -337,11 +353,6 @@ function initFormPage() {
             return;
         }
 
-        if (!product) {
-            setMessage(errorElement, "Please select a product.");
-            productSelect.focus();
-            return;
-        }
         if (!netWeight) {
             setMessage(errorElement, "Please enter a net weight.");
             netWeightInput.focus();
@@ -350,6 +361,11 @@ function initFormPage() {
         if (!Number.isFinite(netWeightValue) || netWeightValue <= 0) {
             setMessage(errorElement, "Net weight must be a positive number.");
             netWeightInput.focus();
+            return;
+        }
+        if (!product) {
+            setMessage(errorElement, "Please select a product.");
+            productSelect.focus();
             return;
         }
         if (operatorParts.length < 2) {
