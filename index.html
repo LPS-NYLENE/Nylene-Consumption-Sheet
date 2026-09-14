@@ -83,7 +83,7 @@
                         <option value="Other">Other</option>
                     </select>
                     <small class="form__hint">
-                        Select one bulk option
+                        Select one bulk option.
                     </small>
                 </div>
 
@@ -100,7 +100,7 @@
                     </select>
                 </div>
 
-                 <div class="form__field">
+                <div class="form__field">
                     <label for="net-weight">Net Weight(lbs).</label>
                     <input
                         id="net-weight"
@@ -177,5 +177,16 @@
             </form>
         </main>
         <script src="app.js" defer></script>
+        <script>
+            const netWeight = document.getElementById("net-weight");
+
+            netWeight.addEventListener("input", () => {
+                const [whole, decimal] = netWeight.value.split(".");
+
+                if (whole.length > 4) {
+                    netWeight.value = whole.slice(0, 4) + (decimal !== undefined ? "." + decimal : "");
+                }
+            });
+        </script>
     </body>
 </html>
