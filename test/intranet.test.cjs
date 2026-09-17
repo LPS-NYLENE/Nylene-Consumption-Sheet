@@ -27,6 +27,9 @@ const {
     DISPLAY_TIME_OFFSET_HOURS,
     DUPLICATE_BOX_MESSAGE,
     shouldEnforceUniqueBoxNumber,
+    inferChipType,
+    isBoxNumberEditableForEntry,
+    isModifyPasswordCorrect,
 } = require("../server.cjs");
 
 function request(port, { method = "GET", url = "/", body } = {}) {
@@ -106,6 +109,46 @@ test("shouldEnforceUniqueBoxNumber applies to scanned boxes only", () => {
     assert.equal(shouldEnforceUniqueBoxNumber("BASF", "purchased"), false);
     assert.equal(shouldEnforceUniqueBoxNumber("A-Bulk", ""), false);
     assert.equal(shouldEnforceUniqueBoxNumber("AD1620301", ""), true);
+});
+
+test("inferChipType uses stored type or known identifiers", () => {
+    assert.equal(inferChipType({ chipType: "box", boxNumber: "AD1" }), "box");
+    assert.equal(inferChipType({ chipType: "bulk", boxNumber: "AD1" }), "bulk");
+    assert.equal(inferChipType({ boxNumber: "A-Bulk" }), "bulk");
+    assert.equal(inferChipType({ boxNumber: "Other" }), "bulk");
+    assert.equal(inferChipType({ boxNumber: "BASF" }), "purchased");
+    assert.equal(inferChipType({ boxNumber: "GeneralPurchasedChip" }), "purchased");
+});
+
+test("isBoxNumberEditableForEntry disables bulk, silo, and purchased chip", () => {
+    assert.equal(
+        isBoxNumberEditableForEntry({ chipType: "box", boxNumber: "AD1" }),
+        true,
+    );
+    assert.equal(
+        isBoxNumberEditableForEntry({ chipType: "bulk", boxNumber: "A-Bulk" }),
+        false,
+    );
+    assert.equal(
+        isBoxNumberEditableForEntry({ chipType: "silo", boxNumber: "Silo" }),
+        false,
+    );
+    assert.equal(
+        isBoxNumberEditableForEntry({
+            chipType: "purchased",
+            boxNumber: "BASF",
+        }),
+        false,
+    );
+    assert.equal(isBoxNumberEditableForEntry({ boxNumber: "C-Bulk" }), false);
+});
+
+test("modify password comparison is case-insensitive and stays on the server", () => {
+    assert.equal(isModifyPasswordCorrect("quality2026!"), true);
+    assert.equal(isModifyPasswordCorrect("QUALITY2026!"), true);
+    assert.equal(isModifyPasswordCorrect("Quality2026!"), true);
+    assert.equal(isModifyPasswordCorrect("wrong-password"), false);
+    assert.equal(isModifyPasswordCorrect(""), false);
 });
 
 test("isFileLockError detects Windows Excel lock codes", () => {
@@ -293,4 +336,142 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     });
     assert.equal(bulkOne.status, 200);
     assert.equal(bulkTwo.status, 200);
+
+    const listingForModify = await request(port, { url: "/api/entries" });
+    assert.equal(listingForModify.status, 200);
+    const modifyEntries = listingForModify.json.entries;
+    const entryIds = modifyEntries.map((entry) => entry.id);
+    assert.equal(
+        entryIds.every((id) => typeof id === "string" && id.length > 0),
+        true,
+    );
+    assert.equal(new Set(entryIds).size, entryIds.length);
+
+    const boxEntry = modifyEntries.find((entry) => entry.boxNumber === "BOXAAA1");
+    const bulkEntry = modifyEntries.find(
+        (entry) => entry.boxNumber === "A-Bulk" && entry.chipType === "bulk",
+    );
+    assert.ok(boxEntry);
+    assert.ok(bulkEntry);
+
+    const wrongPassword = await request(port, {
+        method: "POST",
+        url: "/api/verify-modify",
+        body: { password: "not-the-password" },
+    });
+    assert.equal(wrongPassword.status, 401);
+    assert.equal(wrongPassword.json.error, "Incorrect password.");
+    assert.equal(wrongPassword.json.token, undefined);
+
+    const emptyPassword = await request(port, {
+        method: "POST",
+        url: "/api/verify-modify",
+        body: { password: "" },
+    });
+    assert.equal(emptyPassword.status, 401);
+
+    const verifyOk = await request(port, {
+        method: "POST",
+        url: "/api/verify-modify",
+        body: { password: "QUALITY2026!" },
+    });
+    assert.equal(verifyOk.status, 200);
+    assert.equal(verifyOk.json.success, true);
+    assert.equal(typeof verifyOk.json.token, "string");
+    assert.ok(verifyOk.json.token.length > 20);
+    assert.equal(JSON.stringify(verifyOk.json).includes("quality2026"), false);
+
+    const unauthorizedUpdate = await request(port, {
+        method: "PATCH",
+        url: `/api/entries/${boxEntry.id}`,
+        body: {
+            product: "BS700D",
+            netWeight: "99.5",
+            boxNumber: "BOXAAA1",
+        },
+    });
+    assert.equal(unauthorizedUpdate.status, 401);
+
+    const missingRecord = await request(port, {
+        method: "PATCH",
+        url: "/api/entries/missing-record-id",
+        body: {
+            token: verifyOk.json.token,
+            product: "BS700D",
+            netWeight: "99.5",
+            boxNumber: "BOXNEW99",
+        },
+    });
+    assert.equal(missingRecord.status, 404);
+
+    const updateBox = await request(port, {
+        method: "PATCH",
+        url: `/api/entries/${boxEntry.id}`,
+        body: {
+            token: verifyOk.json.token,
+            product: "BS700D",
+            netWeight: "99.5",
+            boxNumber: "BOXAAA1X",
+        },
+    });
+    assert.equal(updateBox.status, 200);
+    assert.equal(updateBox.json.success, true);
+    assert.equal(updateBox.json.entry.id, boxEntry.id);
+    assert.equal(updateBox.json.entry.product, "BS700D");
+    assert.equal(updateBox.json.entry.netWeight, "99.5");
+    assert.equal(updateBox.json.entry.boxNumber, "BOXAAA1X");
+    assert.equal(updateBox.json.entry.operatorName, boxEntry.operatorName);
+    assert.equal(updateBox.json.entry.destination, boxEntry.destination);
+    assert.equal(updateBox.json.entry.date, boxEntry.date);
+    assert.equal(updateBox.json.entry.time, boxEntry.time);
+
+    const afterBoxUpdate = await request(port, { url: "/api/entries" });
+    const updatedBox = afterBoxUpdate.json.entries.find(
+        (entry) => entry.id === boxEntry.id,
+    );
+    assert.equal(updatedBox.product, "BS700D");
+    assert.equal(updatedBox.netWeight, "99.5");
+    assert.equal(updatedBox.boxNumber, "BOXAAA1X");
+    assert.equal(
+        afterBoxUpdate.json.entries.some((entry) => entry.boxNumber === "BOXAAA1"),
+        false,
+    );
+
+    const duplicateUpdate = await request(port, {
+        method: "PATCH",
+        url: `/api/entries/${boxEntry.id}`,
+        body: {
+            token: verifyOk.json.token,
+            product: "BS700D",
+            netWeight: "99.5",
+            boxNumber: "BOXBBB2",
+        },
+    });
+    assert.equal(duplicateUpdate.status, 409);
+
+    const ignoredBulkBoxChange = await request(port, {
+        method: "PATCH",
+        url: `/api/entries/${bulkEntry.id}`,
+        body: {
+            token: verifyOk.json.token,
+            product: "BS640T",
+            netWeight: "40",
+            boxNumber: "SHOULDNOTAPPLY",
+        },
+    });
+    assert.equal(ignoredBulkBoxChange.status, 200);
+    assert.equal(ignoredBulkBoxChange.json.entry.id, bulkEntry.id);
+    assert.equal(ignoredBulkBoxChange.json.entry.boxNumber, "A-Bulk");
+    assert.equal(ignoredBulkBoxChange.json.entry.product, "BS640T");
+    assert.equal(ignoredBulkBoxChange.json.entry.netWeight, "40");
+    assert.equal(
+        ignoredBulkBoxChange.json.entry.operatorName,
+        bulkEntry.operatorName,
+    );
+
+    const recordsPageAfter = await request(port, { url: "/records.html" });
+    assert.match(recordsPageAfter.text, /Action/);
+    assert.match(recordsPageAfter.text, /Modify record/);
+    assert.match(recordsPageAfter.text, /type="password"/);
+    assert.equal(recordsPageAfter.text.includes("quality2026"), false);
 });
