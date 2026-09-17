@@ -67,6 +67,7 @@
                         inputmode="text"
                         autocomplete="off"
                         placeholder="e.g. AD2620301"
+                        style="text-transform: uppercase;"
                     />
                     <small class="form__hint">Letters and numbers only</small>
                 </div>
@@ -179,7 +180,9 @@
         <script src="app.js" defer></script>
         <script>
             const netWeight = document.getElementById("net-weight");
+            const operatorName = document.getElementById("operator-name");
 
+            // Limit net weight to 4 digits before the decimal
             netWeight.addEventListener("input", () => {
                 const [whole, decimal] = netWeight.value.split(".");
 
@@ -187,6 +190,14 @@
                     netWeight.value = whole.slice(0, 4) + (decimal !== undefined ? "." + decimal : "");
                 }
             });
+
+             // Capitalize the first letter of each word
+                operatorName.addEventListener("input", function () {
+                    this.value = this.value
+                        .toLowerCase()
+                        .replace(/\b\w/g, char => char.toUpperCase());
+            });
         </script>
+        
     </body>
 </html>
