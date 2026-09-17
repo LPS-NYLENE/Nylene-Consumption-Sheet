@@ -638,17 +638,55 @@ function initSummaryPage() {
     }
 }
 
+const RECORDS_PAGE_SIZE = 20;
+
+function filterRecordsBySearch(entries, query) {
+    const needle = normalizeText(query).toLowerCase();
+    if (!needle) {
+        return entries;
+    }
+
+    return entries.filter((entry) => {
+        const operatorName = String(entry.operatorName || "").toLowerCase();
+        const boxNumber = String(entry.boxNumber || "").toLowerCase();
+        return operatorName.includes(needle) || boxNumber.includes(needle);
+    });
+}
+
+function paginateRecords(entries, page, pageSize = RECORDS_PAGE_SIZE) {
+    const totalItems = entries.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    const currentPage = Math.min(Math.max(1, page), totalPages);
+    const start = (currentPage - 1) * pageSize;
+    return {
+        items: entries.slice(start, start + pageSize),
+        currentPage,
+        totalPages,
+        totalItems,
+        startItem: totalItems === 0 ? 0 : start + 1,
+        endItem: Math.min(start + pageSize, totalItems),
+    };
+}
+
 function initRecordsPage() {
     const tableBody = document.getElementById("records-body");
     const emptyState = document.getElementById("records-empty");
     const errorElement = document.getElementById("records-error");
     const updatedElement = document.getElementById("records-updated");
+    const searchInput = document.getElementById("records-search");
+    const countElement = document.getElementById("records-count");
+    const pagination = document.getElementById("records-pagination");
+    const prevButton = document.getElementById("records-prev");
+    const nextButton = document.getElementById("records-next");
+    const pageLabel = document.getElementById("records-page-label");
     if (!tableBody) {
         return;
     }
 
     const apiBaseUrl = getApiBaseUrl();
     let pollTimer = null;
+    let allEntries = [];
+    let currentPage = 1;
 
     async function loadEntries() {
         try {
@@ -658,8 +696,8 @@ function initRecordsPage() {
             }
 
             const payload = await response.json();
-            const entries = Array.isArray(payload.entries) ? payload.entries : [];
-            renderEntries(entries);
+            allEntries = Array.isArray(payload.entries) ? payload.entries : [];
+            renderRecords();
             setMessage(errorElement, "");
             if (updatedElement) {
                 updatedElement.textContent = `Updated ${formatDateTime(new Date())}`;
@@ -672,15 +710,17 @@ function initRecordsPage() {
         }
     }
 
-    function renderEntries(entries) {
-        tableBody.replaceChildren();
-        const hasEntries = entries.length > 0;
-        if (emptyState) {
-            emptyState.hidden = hasEntries;
-        }
-        tableBody.closest("table")?.toggleAttribute("hidden", !hasEntries);
+    function getSearchQuery() {
+        return searchInput ? searchInput.value : "";
+    }
 
-        entries.forEach((entry) => {
+    function renderRecords() {
+        const filtered = filterRecordsBySearch(allEntries, getSearchQuery());
+        const page = paginateRecords(filtered, currentPage);
+        currentPage = page.currentPage;
+
+        tableBody.replaceChildren();
+        page.items.forEach((entry) => {
             const row = document.createElement("tr");
             const values = [
                 entry.date,
@@ -697,6 +737,62 @@ function initRecordsPage() {
                 row.append(cell);
             });
             tableBody.append(row);
+        });
+
+        const hasVisibleRows = page.items.length > 0;
+        const hasSearch = Boolean(normalizeText(getSearchQuery()));
+        tableBody.closest("table")?.toggleAttribute("hidden", !hasVisibleRows);
+
+        if (emptyState) {
+            emptyState.hidden = hasVisibleRows;
+            if (!hasVisibleRows) {
+                emptyState.textContent = hasSearch
+                    ? "No entries match that operator name or box number."
+                    : "No entries yet. Saves from any station appear here.";
+            }
+        }
+
+        if (countElement) {
+            if (page.totalItems === 0) {
+                countElement.textContent = hasSearch
+                    ? "0 matching entries"
+                    : "";
+            } else {
+                countElement.textContent = `Showing ${page.startItem}–${page.endItem} of ${page.totalItems}`;
+            }
+        }
+
+        const showPagination = page.totalItems > RECORDS_PAGE_SIZE;
+        if (pagination) {
+            pagination.hidden = !showPagination;
+        }
+        if (pageLabel) {
+            pageLabel.textContent = `Page ${page.currentPage} of ${page.totalPages}`;
+        }
+        if (prevButton) {
+            prevButton.disabled = page.currentPage <= 1;
+        }
+        if (nextButton) {
+            nextButton.disabled = page.currentPage >= page.totalPages;
+        }
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener("input", () => {
+            currentPage = 1;
+            renderRecords();
+        });
+    }
+    if (prevButton) {
+        prevButton.addEventListener("click", () => {
+            currentPage -= 1;
+            renderRecords();
+        });
+    }
+    if (nextButton) {
+        nextButton.addEventListener("click", () => {
+            currentPage += 1;
+            renderRecords();
         });
     }
 
