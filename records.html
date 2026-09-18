@@ -107,14 +107,14 @@
                 <p class="modal__lead">
                     Enter the password to modify this record.
                 </p>
-                <form id="password-form" novalidate>
+                <form id="password-form" autocomplete="off" novalidate>
                     <div class="form__field">
                         <label for="modify-password">Password</label>
                         <input
                             id="modify-password"
                             name="modifyPassword"
                             type="password"
-                            autocomplete="off"
+                            autocomplete="one-time-code"
                             spellcheck="false"
                             required
                         />
@@ -152,7 +152,7 @@
                     Review this record. Only Net Weight, Product, and Box
                     Number(s) can be changed.
                 </p>
-                <form id="edit-form" novalidate>
+                <form id="edit-form" autocomplete="off" novalidate>
                     <input type="hidden" id="edit-record-id" />
                     <div class="form__field">
                         <label>Date</label>
