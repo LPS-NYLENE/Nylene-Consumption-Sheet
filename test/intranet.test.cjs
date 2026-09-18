@@ -195,6 +195,9 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     const recordsPage = await request(port, { url: "/records.html" });
     assert.equal(recordsPage.status, 200);
     assert.match(recordsPage.text, /Recent Entries/);
+    assert.match(recordsPage.text, /id="records-search"/);
+    assert.match(recordsPage.text, /Operator name or box number/);
+    assert.match(recordsPage.text, /id="records-pagination"/);
 
     const blockedFile = await request(port, { url: "/server.cjs" });
     assert.equal(blockedFile.status, 404);

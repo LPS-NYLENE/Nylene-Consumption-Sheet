@@ -689,149 +689,56 @@ function initSummaryPage() {
     }
 }
 
+const RECORDS_PAGE_SIZE = 20;
+
+function filterRecordsBySearch(entries, query) {
+    const needle = normalizeText(query).toLowerCase();
+    if (!needle) {
+        return entries;
+    }
+
+    return entries.filter((entry) => {
+        const operatorName = String(entry.operatorName || "").toLowerCase();
+        const boxNumber = String(entry.boxNumber || "").toLowerCase();
+        return operatorName.includes(needle) || boxNumber.includes(needle);
+    });
+}
+
+function paginateRecords(entries, page, pageSize = RECORDS_PAGE_SIZE) {
+    const totalItems = entries.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    const currentPage = Math.min(Math.max(1, page), totalPages);
+    const start = (currentPage - 1) * pageSize;
+    return {
+        items: entries.slice(start, start + pageSize),
+        currentPage,
+        totalPages,
+        totalItems,
+        startItem: totalItems === 0 ? 0 : start + 1,
+        endItem: Math.min(start + pageSize, totalItems),
+    };
+}
+
 function initRecordsPage() {
     const tableBody = document.getElementById("records-body");
     const emptyState = document.getElementById("records-empty");
     const errorElement = document.getElementById("records-error");
     const successElement = document.getElementById("records-success");
     const updatedElement = document.getElementById("records-updated");
-    const passwordModal = document.getElementById("password-modal");
-    const passwordForm = document.getElementById("password-form");
-    const passwordInput = document.getElementById("modify-password");
-    const passwordError = document.getElementById("password-error");
-    const passwordCancel = document.getElementById("password-cancel");
-    const editModal = document.getElementById("edit-modal");
-    const editForm = document.getElementById("edit-form");
-    const editRecordId = document.getElementById("edit-record-id");
-    const editDate = document.getElementById("edit-date");
-    const editTime = document.getElementById("edit-time");
-    const editChipType = document.getElementById("edit-chip-type");
-    const editDestination = document.getElementById("edit-destination");
-    const editOperator = document.getElementById("edit-operator");
-    const editNetWeight = document.getElementById("edit-net-weight");
-    const editProduct = document.getElementById("edit-product");
-    const editBoxNumber = document.getElementById("edit-box-number");
-    const editBoxHint = document.getElementById("edit-box-hint");
-    const editError = document.getElementById("edit-error");
-    const editCancel = document.getElementById("edit-cancel");
+    const searchInput = document.getElementById("records-search");
+    const countElement = document.getElementById("records-count");
+    const pagination = document.getElementById("records-pagination");
+    const prevButton = document.getElementById("records-prev");
+    const nextButton = document.getElementById("records-next");
+    const pageLabel = document.getElementById("records-page-label");
     if (!tableBody) {
         return;
     }
 
     const apiBaseUrl = getApiBaseUrl();
     let pollTimer = null;
-    let entriesById = new Map();
-    let pendingEntryId = "";
-    let modifyToken = "";
-    let modalOpen = false;
-
-    function isModalOpen() {
-        return modalOpen;
-    }
-
-    function setOverlayOpen(overlay, open) {
-        if (!overlay) {
-            return;
-        }
-        overlay.hidden = !open;
-    }
-
-    function clearPasswordInput() {
-        if (passwordInput) {
-            passwordInput.value = "";
-        }
-        setMessage(passwordError, "");
-    }
-
-    function closePasswordModal({ resetPending = true } = {}) {
-        setOverlayOpen(passwordModal, false);
-        clearPasswordInput();
-        if (resetPending && (!editModal || editModal.hidden)) {
-            modalOpen = false;
-            pendingEntryId = "";
-        }
-    }
-
-    function closeEditModal() {
-        setOverlayOpen(editModal, false);
-        setMessage(editError, "");
-        modifyToken = "";
-        pendingEntryId = "";
-        modalOpen = false;
-    }
-
-    function openPasswordModal(entryId) {
-        pendingEntryId = entryId;
-        modifyToken = "";
-        modalOpen = true;
-        setMessage(successElement, "");
-        setOverlayOpen(passwordModal, true);
-        clearPasswordInput();
-        passwordInput?.focus();
-    }
-
-    function ensureProductOption(select, value, label) {
-        if (!select || !value) {
-            return;
-        }
-        const existing = Array.from(select.options).find(
-            (option) => option.value === value,
-        );
-        if (existing) {
-            return;
-        }
-        const option = document.createElement("option");
-        option.value = value;
-        option.textContent = label || value;
-        select.append(option);
-    }
-
-    function fillReadonly(element, value) {
-        if (element) {
-            element.textContent = value || "";
-        }
-    }
-
-    function openEditModal(entry) {
-        if (!entry || !editForm) {
-            return;
-        }
-
-        pendingEntryId = entry.id;
-        modalOpen = true;
-        setOverlayOpen(editModal, true);
-        setMessage(editError, "");
-
-        if (editRecordId) {
-            editRecordId.value = entry.id || "";
-        }
-        fillReadonly(editDate, entry.date);
-        fillReadonly(editTime, entry.time);
-        fillReadonly(editChipType, chipTypeLabel(entry));
-        fillReadonly(editDestination, entry.destination);
-        fillReadonly(editOperator, entry.operatorName);
-
-        if (editNetWeight) {
-            editNetWeight.value = entry.netWeight || "";
-        }
-        if (editProduct) {
-            ensureProductOption(editProduct, entry.product, entry.product);
-            editProduct.value = entry.product || "";
-        }
-
-        const boxEditable = isBoxNumberEditable(entry);
-        if (editBoxNumber) {
-            editBoxNumber.value = entry.boxNumber || "";
-            editBoxNumber.disabled = !boxEditable;
-        }
-        if (editBoxHint) {
-            editBoxHint.textContent = boxEditable
-                ? "Letters and numbers only"
-                : "Box number cannot be changed for Bulk, Silo, or Purchased Chip records.";
-        }
-
-        (boxEditable ? editBoxNumber : editNetWeight)?.focus();
-    }
+    let allEntries = [];
+    let currentPage = 1;
 
     async function loadEntries() {
         if (isModalOpen()) {
@@ -845,8 +752,8 @@ function initRecordsPage() {
             }
 
             const payload = await response.json();
-            const entries = Array.isArray(payload.entries) ? payload.entries : [];
-            renderEntries(entries);
+            allEntries = Array.isArray(payload.entries) ? payload.entries : [];
+            renderRecords();
             setMessage(errorElement, "");
             if (updatedElement) {
                 updatedElement.textContent = `Updated ${formatDateTime(new Date())}`;
@@ -859,20 +766,17 @@ function initRecordsPage() {
         }
     }
 
-    function renderEntries(entries) {
+    function getSearchQuery() {
+        return searchInput ? searchInput.value : "";
+    }
+
+    function renderRecords() {
+        const filtered = filterRecordsBySearch(allEntries, getSearchQuery());
+        const page = paginateRecords(filtered, currentPage);
+        currentPage = page.currentPage;
+
         tableBody.replaceChildren();
-        entriesById = new Map();
-        const hasEntries = entries.length > 0;
-        if (emptyState) {
-            emptyState.hidden = hasEntries;
-        }
-        tableBody.closest("table")?.toggleAttribute("hidden", !hasEntries);
-
-        entries.forEach((entry) => {
-            if (entry?.id) {
-                entriesById.set(entry.id, entry);
-            }
-
+        page.items.forEach((entry) => {
             const row = document.createElement("tr");
             const values = [
                 entry.date,
@@ -902,6 +806,62 @@ function initRecordsPage() {
             actionCell.append(modifyButton);
             row.append(actionCell);
             tableBody.append(row);
+        });
+
+        const hasVisibleRows = page.items.length > 0;
+        const hasSearch = Boolean(normalizeText(getSearchQuery()));
+        tableBody.closest("table")?.toggleAttribute("hidden", !hasVisibleRows);
+
+        if (emptyState) {
+            emptyState.hidden = hasVisibleRows;
+            if (!hasVisibleRows) {
+                emptyState.textContent = hasSearch
+                    ? "No entries match that operator name or box number."
+                    : "No entries yet. Saves from any station appear here.";
+            }
+        }
+
+        if (countElement) {
+            if (page.totalItems === 0) {
+                countElement.textContent = hasSearch
+                    ? "0 matching entries"
+                    : "";
+            } else {
+                countElement.textContent = `Showing ${page.startItem}–${page.endItem} of ${page.totalItems}`;
+            }
+        }
+
+        const showPagination = page.totalItems > RECORDS_PAGE_SIZE;
+        if (pagination) {
+            pagination.hidden = !showPagination;
+        }
+        if (pageLabel) {
+            pageLabel.textContent = `Page ${page.currentPage} of ${page.totalPages}`;
+        }
+        if (prevButton) {
+            prevButton.disabled = page.currentPage <= 1;
+        }
+        if (nextButton) {
+            nextButton.disabled = page.currentPage >= page.totalPages;
+        }
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener("input", () => {
+            currentPage = 1;
+            renderRecords();
+        });
+    }
+    if (prevButton) {
+        prevButton.addEventListener("click", () => {
+            currentPage -= 1;
+            renderRecords();
+        });
+    }
+    if (nextButton) {
+        nextButton.addEventListener("click", () => {
+            currentPage += 1;
+            renderRecords();
         });
     }
 
