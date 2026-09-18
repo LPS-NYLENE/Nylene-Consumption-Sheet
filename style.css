@@ -186,6 +186,68 @@ body {
     min-height: 18px;
 }
 
+.records__meta .form__success {
+    margin: 0;
+}
+
+.btn--small {
+    padding: 8px 14px;
+    font-size: 13px;
+}
+
+.form__readonly {
+    margin: 0;
+    padding: 12px 14px;
+    border: 1px solid #edf2f7;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #52606d;
+    font-size: 15px;
+    min-height: 44px;
+}
+
+.form__field input:disabled,
+.form__field select:disabled {
+    background: #f4f6f8;
+    color: #52606d;
+    cursor: not-allowed;
+}
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(15, 23, 42, 0.45);
+}
+
+.modal {
+    width: min(480px, 100%);
+    max-height: calc(100vh - 40px);
+    overflow: auto;
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+}
+
+.modal--wide {
+    width: min(560px, 100%);
+}
+
+.modal h2 {
+    margin: 0 0 8px;
+    font-size: 22px;
+}
+
+.modal__lead {
+    margin: 0 0 20px;
+    color: #52606d;
+}
+
 .summary-list {
     margin: 0;
     display: grid;
