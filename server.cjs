@@ -121,12 +121,18 @@ app.patch("/api/entries/:id", async (req, res) => {
     }
 
     const product = getTrimmedString(req.body?.product);
+    const destination = getTrimmedString(req.body?.destination);
     const netWeight = getTrimmedString(String(req.body?.netWeight ?? ""));
     const requestedBoxNumber = getTrimmedString(req.body?.boxNumber);
     const netWeightValue = Number.parseFloat(netWeight);
 
     if (!product) {
         return res.status(400).json({ error: "Please select a product." });
+    }
+    if (!destination) {
+        return res
+            .status(400)
+            .json({ error: "Please select a chip destination." });
     }
     if (!netWeight) {
         return res.status(400).json({ error: "Please enter a net weight." });
@@ -185,6 +191,7 @@ app.patch("/api/entries/:id", async (req, res) => {
             const updated = {
                 ...current,
                 product,
+                destination,
                 netWeight,
                 boxNumber: nextBoxNumber,
             };

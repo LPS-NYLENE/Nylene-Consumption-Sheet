@@ -846,9 +846,16 @@ function initRecordsPage() {
         fillReadonly(editDate, entry.date);
         fillReadonly(editTime, entry.time);
         fillReadonly(editChipType, chipTypeLabel(entry));
-        fillReadonly(editDestination, entry.destination);
         fillReadonly(editOperator, entry.operatorName);
 
+        if (editDestination) {
+            ensureProductOption(
+                editDestination,
+                entry.destination,
+                entry.destination,
+            );
+            editDestination.value = entry.destination || "";
+        }
         if (editNetWeight) {
             editNetWeight.value = entry.netWeight || "";
         }
@@ -1119,6 +1126,7 @@ function initRecordsPage() {
         }
 
         const product = editProduct?.value || "";
+        const destination = editDestination?.value || "";
         const netWeight = normalizeText(editNetWeight?.value);
         const netWeightValue = Number.parseFloat(netWeight);
         const boxEditable = isBoxNumberEditable(current);
@@ -1126,6 +1134,11 @@ function initRecordsPage() {
             ? normalizeText(editBoxNumber?.value)
             : current.boxNumber;
 
+        if (!destination) {
+            setMessage(editError, "Please select a chip destination.");
+            editDestination?.focus();
+            return;
+        }
         if (!netWeight) {
             setMessage(editError, "Please enter a net weight.");
             editNetWeight?.focus();
@@ -1170,6 +1183,7 @@ function initRecordsPage() {
                     body: JSON.stringify({
                         token: modifyToken,
                         product,
+                        destination,
                         netWeight,
                         boxNumber,
                     }),
