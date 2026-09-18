@@ -185,6 +185,25 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     assert.match(recordsPage.text, /id="records-search"/);
     assert.match(recordsPage.text, /Operator name or box number/);
     assert.match(recordsPage.text, /id="records-pagination"/);
+    assert.match(recordsPage.text, /id="edit-destination"/);
+    assert.match(recordsPage.text, /<select[\s\S]*id="edit-destination"/);
+
+    const destinationPage = await request(port, { url: "/destination.html" });
+    assert.equal(destinationPage.status, 200);
+    const mainFlowDestinations = [
+        ...destinationPage.text.matchAll(
+            /name="destination"[\s\S]*?value="([^"]+)"/g,
+        ),
+    ].map((match) => match[1]);
+    const editDestinationMarkup = recordsPage.text.match(
+        /id="edit-destination"[\s\S]*?<\/select>/,
+    );
+    assert.ok(editDestinationMarkup);
+    const editDestinations = [
+        ...editDestinationMarkup[0].matchAll(/<option value="([^"]+)"/g),
+    ].map((match) => match[1]);
+    assert.ok(mainFlowDestinations.length > 0);
+    assert.deepEqual(editDestinations, mainFlowDestinations);
     assert.match(recordsPage.text, />Action</);
     assert.match(recordsPage.text, /id="password-modal"/);
     assert.match(recordsPage.text, /type="password"/);
@@ -407,11 +426,29 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
         body: {
             token: verifyOk.json.token,
             product: "BS700D",
+            destination: "DCA",
             netWeight: "99.5",
             boxNumber: "BOXNEW99",
         },
     });
     assert.equal(missingRecord.status, 404);
+
+    const missingDestination = await request(port, {
+        method: "PATCH",
+        url: `/api/entries/${boxEntry.id}`,
+        body: {
+            token: verifyOk.json.token,
+            product: "BS700D",
+            destination: "",
+            netWeight: "99.5",
+            boxNumber: "BOXAAA1",
+        },
+    });
+    assert.equal(missingDestination.status, 400);
+    assert.equal(
+        missingDestination.json.error,
+        "Please select a chip destination.",
+    );
 
     const updateBox = await request(port, {
         method: "PATCH",
@@ -419,6 +456,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
         body: {
             token: verifyOk.json.token,
             product: "BS700D",
+            destination: "DCB",
             netWeight: "99.5",
             boxNumber: "BOXAAA1X",
         },
@@ -430,7 +468,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     assert.equal(updateBox.json.entry.netWeight, "99.5");
     assert.equal(updateBox.json.entry.boxNumber, "BOXAAA1X");
     assert.equal(updateBox.json.entry.operatorName, boxEntry.operatorName);
-    assert.equal(updateBox.json.entry.destination, boxEntry.destination);
+    assert.equal(updateBox.json.entry.destination, "DCB");
     assert.equal(updateBox.json.entry.date, boxEntry.date);
     assert.equal(updateBox.json.entry.time, boxEntry.time);
 
@@ -441,6 +479,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     assert.equal(updatedBox.product, "BS700D");
     assert.equal(updatedBox.netWeight, "99.5");
     assert.equal(updatedBox.boxNumber, "BOXAAA1X");
+    assert.equal(updatedBox.destination, "DCB");
     assert.equal(
         afterBoxUpdate.json.entries.some((entry) => entry.boxNumber === "BOXAAA1"),
         false,
@@ -452,6 +491,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
         body: {
             token: verifyOk.json.token,
             product: "BS700D",
+            destination: "DCB",
             netWeight: "99.5",
             boxNumber: "BOXBBB2",
         },
@@ -464,6 +504,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
         body: {
             token: verifyOk.json.token,
             product: "BS640T",
+            destination: "A-Dryer",
             netWeight: "40",
             boxNumber: "SHOULDNOTAPPLY",
         },
@@ -473,6 +514,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     assert.equal(ignoredBulkBoxChange.json.entry.boxNumber, "A-Bulk");
     assert.equal(ignoredBulkBoxChange.json.entry.product, "BS640T");
     assert.equal(ignoredBulkBoxChange.json.entry.netWeight, "40");
+    assert.equal(ignoredBulkBoxChange.json.entry.destination, "A-Dryer");
     assert.equal(
         ignoredBulkBoxChange.json.entry.operatorName,
         bulkEntry.operatorName,
@@ -484,6 +526,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
         body: {
             token: verifyOk.json.token,
             product: "PURCHASED",
+            destination: "D-Dryer",
             netWeight: "18",
             boxNumber: "NEWBOX99",
         },
@@ -492,6 +535,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     assert.equal(ignoredPurchasedBoxChange.json.entry.id, purchasedEntry.id);
     assert.equal(ignoredPurchasedBoxChange.json.entry.boxNumber, "BASF");
     assert.equal(ignoredPurchasedBoxChange.json.entry.netWeight, "18");
+    assert.equal(ignoredPurchasedBoxChange.json.entry.destination, "D-Dryer");
 
     const workbookWithIds = XLSX.readFile(excelPath);
     const headerRow = XLSX.utils.sheet_to_json(workbookWithIds.Sheets.Sheet1, {
