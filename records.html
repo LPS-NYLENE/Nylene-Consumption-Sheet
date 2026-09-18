@@ -96,11 +96,7 @@
             </section>
         </main>
 
-        <div
-            id="password-modal"
-            class="modal-overlay"
-            hidden
-        >
+        <div id="password-modal" class="modal-overlay" hidden>
             <div
                 class="modal"
                 role="dialog"
@@ -111,14 +107,14 @@
                 <p class="modal__lead">
                     Enter the password to modify this record.
                 </p>
-                <form id="password-form" novalidate>
+                <form id="password-form" autocomplete="off" novalidate>
                     <div class="form__field">
                         <label for="modify-password">Password</label>
                         <input
                             id="modify-password"
                             name="modifyPassword"
                             type="password"
-                            autocomplete="off"
+                            autocomplete="one-time-code"
                             spellcheck="false"
                             required
                         />
@@ -144,11 +140,7 @@
             </div>
         </div>
 
-        <div
-            id="edit-modal"
-            class="modal-overlay"
-            hidden
-        >
+        <div id="edit-modal" class="modal-overlay" hidden>
             <div
                 class="modal modal--wide"
                 role="dialog"
@@ -157,26 +149,51 @@
             >
                 <h2 id="edit-modal-title">Modify record</h2>
                 <p class="modal__lead">
-                    Review this record. Only Net Weight, Product, and Box
-                    Number(s) can be changed.
+                    Review this record. Destination, Net Weight, Product, and
+                    Box Number(s) can be changed.
                 </p>
-                <form id="edit-form" novalidate>
+                <form id="edit-form" autocomplete="off" novalidate>
                     <input type="hidden" id="edit-record-id" />
-                    <div class="form__field">
+                    <!-- <div class="form__field">
                         <label>Date</label>
                         <p class="form__readonly" id="edit-date"></p>
-                    </div>
-                    <div class="form__field">
+                    </div> -->
+                    <!-- <div class="form__field">
                         <label>Time</label>
                         <p class="form__readonly" id="edit-time"></p>
-                    </div>
-                    <div class="form__field">
+                    </div> -->
+                    <!-- <div class="form__field">
                         <label>Type</label>
                         <p class="form__readonly" id="edit-chip-type"></p>
-                    </div>
+                    </div> -->
                     <div class="form__field">
-                        <label>Destination</label>
-                        <p class="form__readonly" id="edit-destination"></p>
+                        <label for="edit-destination">Destination</label>
+                        <select
+                            id="edit-destination"
+                            name="destination"
+                            required
+                        >
+                            <option value="" disabled>
+                                Select a destination
+                            </option>
+                            <option value="DCA">DCA</option>
+                            <option value="DCB">DCB</option>
+                            <option value="PCH">PCH | DCA Silo</option>
+                            <option value="Coperion">Coperion</option>
+                            <option value="A-Dryer">A-Dryer</option>
+                            <option value="B-Dryer">B-Dryer</option>
+                            <option value="C-Dryer">C-Dryer</option>
+                            <option value="D-Dryer">D-Dryer</option>
+                            <option value="Silo">Silo</option>
+                            <option value="Recovery">Recovery</option>
+                            <option value="Reposting">Reposting</option>
+                            <option value="35T Extractor">
+                                35Ton Extractor
+                            </option>
+                            <option value="10T Extractor">
+                                10Ton Extractor
+                            </option>
+                        </select>
                     </div>
                     <div class="form__field">
                         <label>Operator</label>

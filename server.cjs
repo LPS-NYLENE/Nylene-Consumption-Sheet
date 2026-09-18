@@ -121,12 +121,18 @@ app.patch("/api/entries/:id", async (req, res) => {
     }
 
     const product = getTrimmedString(req.body?.product);
+    const destination = getTrimmedString(req.body?.destination);
     const netWeight = getTrimmedString(String(req.body?.netWeight ?? ""));
     const requestedBoxNumber = getTrimmedString(req.body?.boxNumber);
     const netWeightValue = Number.parseFloat(netWeight);
 
     if (!product) {
         return res.status(400).json({ error: "Please select a product." });
+    }
+    if (!destination) {
+        return res
+            .status(400)
+            .json({ error: "Please select a chip destination." });
     }
     if (!netWeight) {
         return res.status(400).json({ error: "Please enter a net weight." });
@@ -185,6 +191,7 @@ app.patch("/api/entries/:id", async (req, res) => {
             const updated = {
                 ...current,
                 product,
+                destination,
                 netWeight,
                 boxNumber: nextBoxNumber,
             };
@@ -262,26 +269,6 @@ function getLedgerFilePath(excelPath = FILE_PATH) {
 
 function getTrimmedString(value) {
     return typeof value === "string" ? value.trim() : "";
-}
-
-function shiftDisplayTime(date, hours = DISPLAY_TIME_OFFSET_HOURS) {
-    return new Date(date.getTime() + hours * 60 * 60 * 1000);
-}
-
-function formatRecordedStamp(date = new Date()) {
-    const recorded = shiftDisplayTime(date);
-    return {
-        recorded,
-        date: recorded.toLocaleDateString("en-US"),
-        time: recorded.toLocaleTimeString("en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-        }),
-    };
-}
-
-function normalizeBoxNumberKey(value) {
-    return getTrimmedString(String(value ?? "")).toLowerCase();
 }
 
 function hashModifyPassword(value) {
@@ -428,6 +415,26 @@ function persistEntryIdentities(entries) {
         persistLedger(next);
     }
     return next;
+}
+
+function shiftDisplayTime(date, hours = DISPLAY_TIME_OFFSET_HOURS) {
+    return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function formatRecordedStamp(date = new Date()) {
+    const recorded = shiftDisplayTime(date);
+    return {
+        recorded,
+        date: recorded.toLocaleDateString("en-US"),
+        time: recorded.toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+        }),
+    };
+}
+
+function normalizeBoxNumberKey(value) {
+    return getTrimmedString(String(value ?? "")).toLowerCase();
 }
 
 function shouldEnforceUniqueBoxNumber(boxNumber, chipType) {

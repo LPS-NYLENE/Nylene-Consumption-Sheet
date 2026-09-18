@@ -391,6 +391,11 @@ body {
         width: 100%;
     }
 
+    .records-table .btn,
+    .btn--small {
+        width: auto;
+    }
+
     .records__pagination {
         justify-content: stretch;
     }

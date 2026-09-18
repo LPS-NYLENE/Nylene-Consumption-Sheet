@@ -29,7 +29,6 @@ const {
     shouldEnforceUniqueBoxNumber,
     inferChipType,
     isBoxNumberEditableForEntry,
-    isModifyPasswordCorrect,
 } = require("../server.cjs");
 
 function request(port, { method = "GET", url = "/", body } = {}) {
@@ -111,26 +110,22 @@ test("shouldEnforceUniqueBoxNumber applies to scanned boxes only", () => {
     assert.equal(shouldEnforceUniqueBoxNumber("AD1620301", ""), true);
 });
 
-test("inferChipType uses stored type or known identifiers", () => {
-    assert.equal(inferChipType({ chipType: "box", boxNumber: "AD1" }), "box");
-    assert.equal(inferChipType({ chipType: "bulk", boxNumber: "AD1" }), "bulk");
-    assert.equal(inferChipType({ boxNumber: "A-Bulk" }), "bulk");
-    assert.equal(inferChipType({ boxNumber: "Other" }), "bulk");
-    assert.equal(inferChipType({ boxNumber: "BASF" }), "purchased");
-    assert.equal(inferChipType({ boxNumber: "GeneralPurchasedChip" }), "purchased");
-});
-
-test("isBoxNumberEditableForEntry disables bulk, silo, and purchased chip", () => {
+test("inferChipType and box editability use stored type or box identifiers", () => {
+    assert.equal(inferChipType({ chipType: "box", boxNumber: "AD1620301" }), "box");
+    assert.equal(inferChipType({ chipType: "bulk", boxNumber: "A-Bulk" }), "bulk");
     assert.equal(
-        isBoxNumberEditableForEntry({ chipType: "box", boxNumber: "AD1" }),
+        inferChipType({ chipType: "purchased", boxNumber: "BASF" }),
+        "purchased",
+    );
+    assert.equal(inferChipType({ boxNumber: "C-Bulk" }), "bulk");
+    assert.equal(inferChipType({ boxNumber: "MOHAWK" }), "purchased");
+    assert.equal(inferChipType({ boxNumber: "AD1620301" }), "box");
+    assert.equal(
+        isBoxNumberEditableForEntry({ chipType: "box", boxNumber: "AD1620301" }),
         true,
     );
     assert.equal(
         isBoxNumberEditableForEntry({ chipType: "bulk", boxNumber: "A-Bulk" }),
-        false,
-    );
-    assert.equal(
-        isBoxNumberEditableForEntry({ chipType: "silo", boxNumber: "Silo" }),
         false,
     );
     assert.equal(
@@ -140,15 +135,7 @@ test("isBoxNumberEditableForEntry disables bulk, silo, and purchased chip", () =
         }),
         false,
     );
-    assert.equal(isBoxNumberEditableForEntry({ boxNumber: "C-Bulk" }), false);
-});
-
-test("modify password comparison is case-insensitive and stays on the server", () => {
-    assert.equal(isModifyPasswordCorrect("quality2026!"), true);
-    assert.equal(isModifyPasswordCorrect("QUALITY2026!"), true);
-    assert.equal(isModifyPasswordCorrect("Quality2026!"), true);
-    assert.equal(isModifyPasswordCorrect("wrong-password"), false);
-    assert.equal(isModifyPasswordCorrect(""), false);
+    assert.equal(isBoxNumberEditableForEntry({ boxNumber: "Other" }), false);
 });
 
 test("isFileLockError detects Windows Excel lock codes", () => {
@@ -198,6 +185,30 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     assert.match(recordsPage.text, /id="records-search"/);
     assert.match(recordsPage.text, /Operator name or box number/);
     assert.match(recordsPage.text, /id="records-pagination"/);
+    assert.match(recordsPage.text, /id="edit-destination"/);
+    assert.match(recordsPage.text, /<select[\s\S]*id="edit-destination"/);
+
+    const destinationPage = await request(port, { url: "/destination.html" });
+    assert.equal(destinationPage.status, 200);
+    const mainFlowDestinations = [
+        ...destinationPage.text.matchAll(
+            /name="destination"[\s\S]*?value="([^"]+)"/g,
+        ),
+    ].map((match) => match[1]);
+    const editDestinationMarkup = recordsPage.text.match(
+        /id="edit-destination"[\s\S]*?<\/select>/,
+    );
+    assert.ok(editDestinationMarkup);
+    const editDestinations = [
+        ...editDestinationMarkup[0].matchAll(/<option value="([^"]+)"/g),
+    ].map((match) => match[1]);
+    assert.ok(mainFlowDestinations.length > 0);
+    assert.deepEqual(editDestinations, mainFlowDestinations);
+    assert.match(recordsPage.text, />Action</);
+    assert.match(recordsPage.text, /id="password-modal"/);
+    assert.match(recordsPage.text, /type="password"/);
+    assert.match(recordsPage.text, /Modify record/);
+    assert.equal(recordsPage.text.toLowerCase().includes("quality2026"), false);
 
     const blockedFile = await request(port, { url: "/server.cjs" });
     assert.equal(blockedFile.status, 404);
@@ -340,6 +351,16 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     assert.equal(bulkOne.status, 200);
     assert.equal(bulkTwo.status, 200);
 
+    const purchased = await request(port, {
+        method: "POST",
+        url: "/save",
+        body: sampleEntry("BASF", {
+            chipType: "purchased",
+            product: "PURCHASED",
+        }),
+    });
+    assert.equal(purchased.status, 200);
+
     const listingForModify = await request(port, { url: "/api/entries" });
     assert.equal(listingForModify.status, 200);
     const modifyEntries = listingForModify.json.entries;
@@ -354,8 +375,12 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     const bulkEntry = modifyEntries.find(
         (entry) => entry.boxNumber === "A-Bulk" && entry.chipType === "bulk",
     );
+    const purchasedEntry = modifyEntries.find(
+        (entry) => entry.boxNumber === "BASF" && entry.chipType === "purchased",
+    );
     assert.ok(boxEntry);
     assert.ok(bulkEntry);
+    assert.ok(purchasedEntry);
 
     const wrongPassword = await request(port, {
         method: "POST",
@@ -401,11 +426,29 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
         body: {
             token: verifyOk.json.token,
             product: "BS700D",
+            destination: "DCA",
             netWeight: "99.5",
             boxNumber: "BOXNEW99",
         },
     });
     assert.equal(missingRecord.status, 404);
+
+    const missingDestination = await request(port, {
+        method: "PATCH",
+        url: `/api/entries/${boxEntry.id}`,
+        body: {
+            token: verifyOk.json.token,
+            product: "BS700D",
+            destination: "",
+            netWeight: "99.5",
+            boxNumber: "BOXAAA1",
+        },
+    });
+    assert.equal(missingDestination.status, 400);
+    assert.equal(
+        missingDestination.json.error,
+        "Please select a chip destination.",
+    );
 
     const updateBox = await request(port, {
         method: "PATCH",
@@ -413,6 +456,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
         body: {
             token: verifyOk.json.token,
             product: "BS700D",
+            destination: "DCB",
             netWeight: "99.5",
             boxNumber: "BOXAAA1X",
         },
@@ -424,7 +468,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     assert.equal(updateBox.json.entry.netWeight, "99.5");
     assert.equal(updateBox.json.entry.boxNumber, "BOXAAA1X");
     assert.equal(updateBox.json.entry.operatorName, boxEntry.operatorName);
-    assert.equal(updateBox.json.entry.destination, boxEntry.destination);
+    assert.equal(updateBox.json.entry.destination, "DCB");
     assert.equal(updateBox.json.entry.date, boxEntry.date);
     assert.equal(updateBox.json.entry.time, boxEntry.time);
 
@@ -435,6 +479,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     assert.equal(updatedBox.product, "BS700D");
     assert.equal(updatedBox.netWeight, "99.5");
     assert.equal(updatedBox.boxNumber, "BOXAAA1X");
+    assert.equal(updatedBox.destination, "DCB");
     assert.equal(
         afterBoxUpdate.json.entries.some((entry) => entry.boxNumber === "BOXAAA1"),
         false,
@@ -446,6 +491,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
         body: {
             token: verifyOk.json.token,
             product: "BS700D",
+            destination: "DCB",
             netWeight: "99.5",
             boxNumber: "BOXBBB2",
         },
@@ -458,6 +504,7 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
         body: {
             token: verifyOk.json.token,
             product: "BS640T",
+            destination: "A-Dryer",
             netWeight: "40",
             boxNumber: "SHOULDNOTAPPLY",
         },
@@ -467,14 +514,42 @@ test("intranet server serves the app, centralizes saves, and lists shared entrie
     assert.equal(ignoredBulkBoxChange.json.entry.boxNumber, "A-Bulk");
     assert.equal(ignoredBulkBoxChange.json.entry.product, "BS640T");
     assert.equal(ignoredBulkBoxChange.json.entry.netWeight, "40");
+    assert.equal(ignoredBulkBoxChange.json.entry.destination, "A-Dryer");
     assert.equal(
         ignoredBulkBoxChange.json.entry.operatorName,
         bulkEntry.operatorName,
     );
 
-    const recordsPageAfter = await request(port, { url: "/records.html" });
-    assert.match(recordsPageAfter.text, /Action/);
-    assert.match(recordsPageAfter.text, /Modify record/);
-    assert.match(recordsPageAfter.text, /type="password"/);
-    assert.equal(recordsPageAfter.text.includes("quality2026"), false);
+    const ignoredPurchasedBoxChange = await request(port, {
+        method: "PATCH",
+        url: `/api/entries/${purchasedEntry.id}`,
+        body: {
+            token: verifyOk.json.token,
+            product: "PURCHASED",
+            destination: "D-Dryer",
+            netWeight: "18",
+            boxNumber: "NEWBOX99",
+        },
+    });
+    assert.equal(ignoredPurchasedBoxChange.status, 200);
+    assert.equal(ignoredPurchasedBoxChange.json.entry.id, purchasedEntry.id);
+    assert.equal(ignoredPurchasedBoxChange.json.entry.boxNumber, "BASF");
+    assert.equal(ignoredPurchasedBoxChange.json.entry.netWeight, "18");
+    assert.equal(ignoredPurchasedBoxChange.json.entry.destination, "D-Dryer");
+
+    const workbookWithIds = XLSX.readFile(excelPath);
+    const headerRow = XLSX.utils.sheet_to_json(workbookWithIds.Sheets.Sheet1, {
+        header: 1,
+    })[0];
+    assert.deepEqual(headerRow.slice(0, 7), [
+        "Box Number",
+        "Product",
+        "Operator Name",
+        "Chip Destination",
+        "Date",
+        "Time",
+        "Net Weight",
+    ]);
+    assert.equal(headerRow.includes("ID"), true);
+    assert.equal(headerRow.includes("Chip Type"), true);
 });

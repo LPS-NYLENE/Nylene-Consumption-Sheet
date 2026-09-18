@@ -731,6 +731,25 @@ function initRecordsPage() {
     const prevButton = document.getElementById("records-prev");
     const nextButton = document.getElementById("records-next");
     const pageLabel = document.getElementById("records-page-label");
+    const passwordModal = document.getElementById("password-modal");
+    const passwordForm = document.getElementById("password-form");
+    const passwordInput = document.getElementById("modify-password");
+    const passwordError = document.getElementById("password-error");
+    const passwordCancel = document.getElementById("password-cancel");
+    const editModal = document.getElementById("edit-modal");
+    const editForm = document.getElementById("edit-form");
+    const editRecordId = document.getElementById("edit-record-id");
+    const editDate = document.getElementById("edit-date");
+    const editTime = document.getElementById("edit-time");
+    const editChipType = document.getElementById("edit-chip-type");
+    const editDestination = document.getElementById("edit-destination");
+    const editOperator = document.getElementById("edit-operator");
+    const editNetWeight = document.getElementById("edit-net-weight");
+    const editProduct = document.getElementById("edit-product");
+    const editBoxNumber = document.getElementById("edit-box-number");
+    const editBoxHint = document.getElementById("edit-box-hint");
+    const editError = document.getElementById("edit-error");
+    const editCancel = document.getElementById("edit-cancel");
     if (!tableBody) {
         return;
     }
@@ -739,6 +758,125 @@ function initRecordsPage() {
     let pollTimer = null;
     let allEntries = [];
     let currentPage = 1;
+    let entriesById = new Map();
+    let pendingEntryId = "";
+    let modifyToken = "";
+    let modalOpen = false;
+
+    function isModalOpen() {
+        return modalOpen;
+    }
+
+    function setOverlayOpen(overlay, open) {
+        if (!overlay) {
+            return;
+        }
+        overlay.hidden = !open;
+    }
+
+    function clearPasswordInput() {
+        if (passwordInput) {
+            passwordInput.value = "";
+        }
+        setMessage(passwordError, "");
+    }
+
+    function closePasswordModal({ resetPending = true } = {}) {
+        setOverlayOpen(passwordModal, false);
+        clearPasswordInput();
+        if (resetPending && (!editModal || editModal.hidden)) {
+            modalOpen = false;
+            pendingEntryId = "";
+        }
+    }
+
+    function closeEditModal() {
+        setOverlayOpen(editModal, false);
+        setMessage(editError, "");
+        modifyToken = "";
+        pendingEntryId = "";
+        modalOpen = false;
+    }
+
+    function openPasswordModal(entryId) {
+        pendingEntryId = entryId;
+        modifyToken = "";
+        modalOpen = true;
+        setMessage(successElement, "");
+        setOverlayOpen(passwordModal, true);
+        clearPasswordInput();
+        passwordInput?.focus();
+    }
+
+    function ensureProductOption(select, value, label) {
+        if (!select || !value) {
+            return;
+        }
+        const existing = Array.from(select.options).find(
+            (option) => option.value === value,
+        );
+        if (existing) {
+            return;
+        }
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label || value;
+        select.append(option);
+    }
+
+    function fillReadonly(element, value) {
+        if (element) {
+            element.textContent = value || "";
+        }
+    }
+
+    function openEditModal(entry) {
+        if (!entry || !editForm) {
+            return;
+        }
+
+        pendingEntryId = entry.id;
+        modalOpen = true;
+        setOverlayOpen(editModal, true);
+        setMessage(editError, "");
+
+        if (editRecordId) {
+            editRecordId.value = entry.id || "";
+        }
+        fillReadonly(editDate, entry.date);
+        fillReadonly(editTime, entry.time);
+        fillReadonly(editChipType, chipTypeLabel(entry));
+        fillReadonly(editOperator, entry.operatorName);
+
+        if (editDestination) {
+            ensureProductOption(
+                editDestination,
+                entry.destination,
+                entry.destination,
+            );
+            editDestination.value = entry.destination || "";
+        }
+        if (editNetWeight) {
+            editNetWeight.value = entry.netWeight || "";
+        }
+        if (editProduct) {
+            ensureProductOption(editProduct, entry.product, entry.product);
+            editProduct.value = entry.product || "";
+        }
+
+        const boxEditable = isBoxNumberEditable(entry);
+        if (editBoxNumber) {
+            editBoxNumber.value = entry.boxNumber || "";
+            editBoxNumber.disabled = !boxEditable;
+        }
+        if (editBoxHint) {
+            editBoxHint.textContent = boxEditable
+                ? "Letters and numbers only"
+                : "Box number cannot be changed for Bulk, Silo, or Purchased Chip records.";
+        }
+
+        (boxEditable ? editBoxNumber : editNetWeight)?.focus();
+    }
 
     async function loadEntries() {
         if (isModalOpen()) {
@@ -776,6 +914,13 @@ function initRecordsPage() {
         currentPage = page.currentPage;
 
         tableBody.replaceChildren();
+        entriesById = new Map();
+        allEntries.forEach((entry) => {
+            if (entry?.id) {
+                entriesById.set(entry.id, entry);
+            }
+        });
+
         page.items.forEach((entry) => {
             const row = document.createElement("tr");
             const values = [
@@ -981,6 +1126,7 @@ function initRecordsPage() {
         }
 
         const product = editProduct?.value || "";
+        const destination = editDestination?.value || "";
         const netWeight = normalizeText(editNetWeight?.value);
         const netWeightValue = Number.parseFloat(netWeight);
         const boxEditable = isBoxNumberEditable(current);
@@ -988,6 +1134,11 @@ function initRecordsPage() {
             ? normalizeText(editBoxNumber?.value)
             : current.boxNumber;
 
+        if (!destination) {
+            setMessage(editError, "Please select a chip destination.");
+            editDestination?.focus();
+            return;
+        }
         if (!netWeight) {
             setMessage(editError, "Please enter a net weight.");
             editNetWeight?.focus();
@@ -1032,6 +1183,7 @@ function initRecordsPage() {
                     body: JSON.stringify({
                         token: modifyToken,
                         product,
+                        destination,
                         netWeight,
                         boxNumber,
                     }),
