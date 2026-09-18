@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
 const XLSX = require("xlsx");
@@ -35,6 +36,8 @@ const HEADERS = [
     "Time",
     "Net Weight",
 ];
+const EXTRA_HEADERS = ["ID", "Chip Type"];
+const WRITE_HEADERS = [...HEADERS, ...EXTRA_HEADERS];
 const DISPLAY_TIME_OFFSET_HOURS = 3;
 const DUPLICATE_BOX_MESSAGE =
     "The box with this Box number has been consumed try another box";
@@ -43,6 +46,24 @@ const REUSABLE_BOX_IDENTIFIERS = new Set(
         value.toLowerCase(),
     ),
 );
+const BULK_SILO_IDENTIFIERS = new Set(
+    ["A-Bulk", "B-Bulk", "C-Bulk", "Other", "Silo"].map((value) =>
+        value.toLowerCase(),
+    ),
+);
+const PURCHASED_CHIP_IDENTIFIERS = new Set(
+    ["BASF", "AdvanSix", "MOHAWK", "GeneralPurchasedChip"].map((value) =>
+        value.toLowerCase(),
+    ),
+);
+const NON_EDITABLE_BOX_CHIP_TYPES = new Set(["bulk", "silo", "purchased"]);
+const DEFAULT_MODIFY_PASSWORD_DIGEST =
+    "b962f59817db6878e5420a145092d935cc260fda59a27d2287b4eed8156fa9c8";
+const MODIFY_TOKEN_TTL_MS = Number.parseInt(
+    process.env.MODIFY_TOKEN_TTL_MS || "900000",
+    10,
+);
+const modifyTokens = new Map();
 
 // Excel path used by the save endpoint (override with EXCEL_FILE_PATH).
 const FILE_PATH = getExcelFilePath();
@@ -75,6 +96,127 @@ app.get("/api/entries", async (req, res) => {
     } catch (error) {
         console.error(`Failed to read Excel file at ${FILE_PATH}.`, error);
         return res.status(500).json({ error: "Unable to read saved entries." });
+    }
+});
+
+app.post("/api/verify-modify", (req, res) => {
+    if (!isModifyPasswordCorrect(req.body?.password)) {
+        return res.status(401).json({ error: "Incorrect password." });
+    }
+
+    return res.json({
+        success: true,
+        token: createModifyToken(),
+    });
+});
+
+app.patch("/api/entries/:id", async (req, res) => {
+    const id = getTrimmedString(req.params.id);
+    if (!id) {
+        return res.status(400).json({ error: "Missing record id." });
+    }
+
+    if (!authorizeModifyRequest(req.body).ok) {
+        return res.status(401).json({ error: "Incorrect password." });
+    }
+
+    const product = getTrimmedString(req.body?.product);
+    const netWeight = getTrimmedString(String(req.body?.netWeight ?? ""));
+    const requestedBoxNumber = getTrimmedString(req.body?.boxNumber);
+    const netWeightValue = Number.parseFloat(netWeight);
+
+    if (!product) {
+        return res.status(400).json({ error: "Please select a product." });
+    }
+    if (!netWeight) {
+        return res.status(400).json({ error: "Please enter a net weight." });
+    }
+    if (!Number.isFinite(netWeightValue) || netWeightValue <= 0) {
+        return res
+            .status(400)
+            .json({ error: "Net weight must be a positive number." });
+    }
+
+    try {
+        const result = await withExcelLock(() => {
+            const entries = persistEntryIdentities(loadLedger());
+            const index = entries.findIndex((entry) => entry.id === id);
+            if (index === -1) {
+                const error = new Error("Record not found.");
+                error.code = "NOT_FOUND";
+                throw error;
+            }
+
+            const current = entries[index];
+            const boxEditable = isBoxNumberEditableForEntry(current);
+            let nextBoxNumber = current.boxNumber;
+
+            if (boxEditable) {
+                if (!requestedBoxNumber) {
+                    const error = new Error("Please enter a box number.");
+                    error.code = "VALIDATION";
+                    throw error;
+                }
+                if (!/^[a-z0-9]+$/i.test(requestedBoxNumber)) {
+                    const error = new Error(
+                        "Box number must be alphanumeric only.",
+                    );
+                    error.code = "VALIDATION";
+                    throw error;
+                }
+                if (
+                    shouldEnforceUniqueBoxNumber(
+                        requestedBoxNumber,
+                        current.chipType,
+                    ) &&
+                    isBoxNumberConsumed(
+                        requestedBoxNumber,
+                        entries,
+                        current.id,
+                    )
+                ) {
+                    const error = new Error(DUPLICATE_BOX_MESSAGE);
+                    error.code = "DUPLICATE_BOX";
+                    throw error;
+                }
+                nextBoxNumber = requestedBoxNumber;
+            }
+
+            const updated = {
+                ...current,
+                product,
+                netWeight,
+                boxNumber: nextBoxNumber,
+            };
+            entries[index] = updated;
+            persistLedger(entries);
+            const excelSynced = tryWriteExcel(entries);
+            return { entry: updated, excelSynced };
+        });
+
+        return res.json({
+            success: true,
+            excelSynced: result.excelSynced !== false,
+            entry: result.entry,
+        });
+    } catch (error) {
+        if (error.code === "NOT_FOUND") {
+            return res.status(404).json({ error: "Record not found." });
+        }
+        if (error.code === "DUPLICATE_BOX") {
+            return res.status(409).json({ error: DUPLICATE_BOX_MESSAGE });
+        }
+        if (error.code === "VALIDATION") {
+            return res.status(400).json({ error: error.message });
+        }
+
+        console.error(
+            `Failed to update data at ${getLedgerFilePath()}.`,
+            error,
+        );
+        return res.status(500).json({
+            error: "Unable to save data.",
+        });
     }
 });
 
@@ -122,6 +264,152 @@ function getTrimmedString(value) {
     return typeof value === "string" ? value.trim() : "";
 }
 
+function hashModifyPassword(value) {
+    return crypto
+        .createHash("sha256")
+        .update(getTrimmedString(value).toLowerCase(), "utf8")
+        .digest("hex");
+}
+
+function getModifyPasswordDigest() {
+    const configured = getTrimmedString(process.env.MODIFY_PASSWORD);
+    if (configured) {
+        return hashModifyPassword(configured);
+    }
+
+    return DEFAULT_MODIFY_PASSWORD_DIGEST;
+}
+
+function isModifyPasswordCorrect(value) {
+    const expected = Buffer.from(getModifyPasswordDigest(), "hex");
+    const actual = Buffer.from(hashModifyPassword(value), "hex");
+    if (expected.length !== actual.length) {
+        return false;
+    }
+
+    return crypto.timingSafeEqual(expected, actual);
+}
+
+function pruneModifyTokens(now = Date.now()) {
+    for (const [token, record] of modifyTokens) {
+        if (!record || record.expiresAt <= now) {
+            modifyTokens.delete(token);
+        }
+    }
+}
+
+function createModifyToken() {
+    pruneModifyTokens();
+    const ttl =
+        Number.isFinite(MODIFY_TOKEN_TTL_MS) && MODIFY_TOKEN_TTL_MS > 0
+            ? MODIFY_TOKEN_TTL_MS
+            : 900000;
+    const token = crypto.randomBytes(32).toString("hex");
+    modifyTokens.set(token, { expiresAt: Date.now() + ttl });
+    return token;
+}
+
+function isValidModifyToken(token) {
+    pruneModifyTokens();
+    const key = getTrimmedString(token);
+    return Boolean(key) && modifyTokens.has(key);
+}
+
+function authorizeModifyRequest(body) {
+    if (isValidModifyToken(body?.token)) {
+        return { ok: true };
+    }
+    if (isModifyPasswordCorrect(body?.password)) {
+        return { ok: true };
+    }
+
+    return { ok: false };
+}
+
+function inferChipType(entry) {
+    const type = getTrimmedString(entry?.chipType).toLowerCase();
+    if (
+        type === "box" ||
+        type === "bulk" ||
+        type === "purchased" ||
+        type === "silo"
+    ) {
+        return type;
+    }
+
+    const boxKey = normalizeBoxNumberKey(entry?.boxNumber);
+    if (BULK_SILO_IDENTIFIERS.has(boxKey)) {
+        return "bulk";
+    }
+    if (PURCHASED_CHIP_IDENTIFIERS.has(boxKey)) {
+        return "purchased";
+    }
+
+    return "box";
+}
+
+function isBoxNumberEditableForEntry(entry) {
+    const type = inferChipType(entry);
+    if (NON_EDITABLE_BOX_CHIP_TYPES.has(type)) {
+        return false;
+    }
+
+    const boxKey = normalizeBoxNumberKey(entry?.boxNumber);
+    return (
+        !BULK_SILO_IDENTIFIERS.has(boxKey) &&
+        !PURCHASED_CHIP_IDENTIFIERS.has(boxKey)
+    );
+}
+
+function createEntryId() {
+    return crypto.randomUUID();
+}
+
+function ensureEntryIdentities(entries) {
+    let mutated = false;
+    const next = (Array.isArray(entries) ? entries : []).map((entry) => {
+        const currentId = getTrimmedString(entry?.id);
+        const inferredType = inferChipType(entry);
+        const currentType = getTrimmedString(entry?.chipType).toLowerCase();
+        if (currentId && currentType === inferredType) {
+            return {
+                boxNumber: getTrimmedString(entry.boxNumber),
+                product: getTrimmedString(entry.product),
+                operatorName: getTrimmedString(entry.operatorName),
+                destination: getTrimmedString(entry.destination),
+                date: getTrimmedString(entry.date),
+                time: getTrimmedString(entry.time),
+                netWeight: getTrimmedString(String(entry.netWeight ?? "")),
+                id: currentId,
+                chipType: inferredType,
+            };
+        }
+
+        mutated = true;
+        return {
+            boxNumber: getTrimmedString(entry?.boxNumber),
+            product: getTrimmedString(entry?.product),
+            operatorName: getTrimmedString(entry?.operatorName),
+            destination: getTrimmedString(entry?.destination),
+            date: getTrimmedString(entry?.date),
+            time: getTrimmedString(entry?.time),
+            netWeight: getTrimmedString(String(entry?.netWeight ?? "")),
+            id: currentId || createEntryId(),
+            chipType: inferredType,
+        };
+    });
+
+    return { entries: next, mutated };
+}
+
+function persistEntryIdentities(entries) {
+    const { entries: next, mutated } = ensureEntryIdentities(entries);
+    if (mutated) {
+        persistLedger(next);
+    }
+    return next;
+}
+
 function shiftDisplayTime(date, hours = DISPLAY_TIME_OFFSET_HOURS) {
     return new Date(date.getTime() + hours * 60 * 60 * 1000);
 }
@@ -144,7 +432,7 @@ function normalizeBoxNumberKey(value) {
 
 function shouldEnforceUniqueBoxNumber(boxNumber, chipType) {
     const type = getTrimmedString(chipType).toLowerCase();
-    if (type === "bulk" || type === "purchased") {
+    if (type === "bulk" || type === "purchased" || type === "silo") {
         return false;
     }
     if (type === "box") {
@@ -154,15 +442,24 @@ function shouldEnforceUniqueBoxNumber(boxNumber, chipType) {
     return !REUSABLE_BOX_IDENTIFIERS.has(normalizeBoxNumberKey(boxNumber));
 }
 
-function isBoxNumberConsumed(boxNumber, entries = loadLedger()) {
+function isBoxNumberConsumed(
+    boxNumber,
+    entries = loadLedger(),
+    exceptId = "",
+) {
     const key = normalizeBoxNumberKey(boxNumber);
     if (!key) {
         return false;
     }
 
-    return entries.some(
-        (entry) => normalizeBoxNumberKey(entry.boxNumber) === key,
-    );
+    const skipId = getTrimmedString(exceptId);
+    return entries.some((entry) => {
+        if (skipId && getTrimmedString(entry.id) === skipId) {
+            return false;
+        }
+
+        return normalizeBoxNumberKey(entry.boxNumber) === key;
+    });
 }
 
 function sendPublicFile(res, fileName) {
@@ -506,6 +803,8 @@ function rowToEntry(row) {
         date: getTrimmedString(String(row[4] ?? "")),
         time: getTrimmedString(String(row[5] ?? "")),
         netWeight: getTrimmedString(String(row[6] ?? "")),
+        id: getTrimmedString(String(row[7] ?? "")),
+        chipType: getTrimmedString(String(row[8] ?? "")).toLowerCase(),
     };
 }
 
@@ -518,6 +817,8 @@ function entryToRow(entry) {
         entry.date,
         entry.time,
         entry.netWeight,
+        entry.id || "",
+        entry.chipType || "",
     ];
 }
 
@@ -601,7 +902,7 @@ function writeWorkbookFromEntries(entries) {
     ensureDirectoryExists(FILE_PATH);
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.aoa_to_sheet([
-        HEADERS,
+        WRITE_HEADERS,
         ...entries.map(entryToRow),
     ]);
     XLSX.utils.book_append_sheet(workbook, worksheet, SHEET_NAME);
@@ -609,7 +910,7 @@ function writeWorkbookFromEntries(entries) {
 }
 
 function readEntries() {
-    return loadLedger();
+    return persistEntryIdentities(loadLedger());
 }
 
 let excelChain = Promise.resolve();
@@ -663,16 +964,26 @@ function tryWriteExcel(entries) {
 }
 
 function saveRow(row) {
-    const entry = rowToEntry(row);
-    const entries = [entry, ...loadLedger()];
+    return saveEntry(rowToEntry(row));
+}
+
+function saveEntry(fields) {
+    const entry = ensureEntryIdentities([
+        {
+            ...fields,
+            id: createEntryId(),
+            chipType: inferChipType(fields),
+        },
+    ]).entries[0];
+    const entries = [entry, ...persistEntryIdentities(loadLedger())];
     persistLedger(entries);
     try {
         const excelSynced = tryWriteExcel(entries);
-        return { excelSynced };
+        return { excelSynced, entry };
     } catch (error) {
         console.error(`Failed to update Excel file at ${FILE_PATH}.`, error);
         excelSyncPending = true;
-        return { excelSynced: false };
+        return { excelSynced: false, entry };
     }
 }
 
@@ -745,16 +1056,6 @@ app.post("/save", async (req, res) => {
 
     const { date, time, recorded } = formatRecordedStamp();
 
-    const row = [
-        boxNumber,
-        product,
-        operatorName,
-        destination,
-        date,
-        time,
-        netWeight,
-    ];
-
     try {
         const result = await withExcelLock(() => {
             if (
@@ -766,7 +1067,16 @@ app.post("/save", async (req, res) => {
                 throw error;
             }
 
-            return saveRow(row);
+            return saveEntry({
+                boxNumber,
+                product,
+                operatorName,
+                destination,
+                date,
+                time,
+                netWeight,
+                chipType,
+            });
         });
         return res.json({
             success: true,
@@ -848,4 +1158,7 @@ module.exports = {
     DISPLAY_TIME_OFFSET_HOURS,
     DUPLICATE_BOX_MESSAGE,
     shouldEnforceUniqueBoxNumber,
+    inferChipType,
+    isBoxNumberEditableForEntry,
+    isModifyPasswordCorrect,
 };
