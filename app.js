@@ -69,57 +69,6 @@ function normalizeText(value) {
     return value ? value.trim() : "";
 }
 
-const NON_EDITABLE_BOX_CHIP_TYPES = new Set(["bulk", "silo", "purchased"]);
-const NON_EDITABLE_BOX_IDENTIFIERS = new Set(
-    [
-        "A-Bulk",
-        "B-Bulk",
-        "C-Bulk",
-        "Other",
-        "Silo",
-        "BASF",
-        "AdvanSix",
-        "MOHAWK",
-        "GeneralPurchasedChip",
-    ].map((value) => value.toLowerCase()),
-);
-
-function isBoxNumberEditable(entry) {
-    const type = normalizeText(entry?.chipType).toLowerCase();
-    if (NON_EDITABLE_BOX_CHIP_TYPES.has(type)) {
-        return false;
-    }
-
-    return !NON_EDITABLE_BOX_IDENTIFIERS.has(
-        normalizeText(entry?.boxNumber).toLowerCase(),
-    );
-}
-
-function chipTypeLabel(entry) {
-    const type = normalizeText(entry?.chipType).toLowerCase();
-    if (type === "purchased") {
-        return "Purchased Chip";
-    }
-    if (type === "bulk" || type === "silo") {
-        return "Bulk/Silo";
-    }
-
-    const boxKey = normalizeText(entry?.boxNumber).toLowerCase();
-    if (
-        boxKey === "basf" ||
-        boxKey === "advansix" ||
-        boxKey === "mohawk" ||
-        boxKey === "generalpurchasedchip"
-    ) {
-        return "Purchased Chip";
-    }
-    if (NON_EDITABLE_BOX_IDENTIFIERS.has(boxKey)) {
-        return "Bulk/Silo";
-    }
-
-    return "Box Number";
-}
-
 function getApiBaseUrl() {
     const configured = document.body?.dataset?.apiBase?.trim();
     if (configured) {
@@ -723,7 +672,6 @@ function initRecordsPage() {
     const tableBody = document.getElementById("records-body");
     const emptyState = document.getElementById("records-empty");
     const errorElement = document.getElementById("records-error");
-    const successElement = document.getElementById("records-success");
     const updatedElement = document.getElementById("records-updated");
     const searchInput = document.getElementById("records-search");
     const countElement = document.getElementById("records-count");
@@ -741,10 +689,6 @@ function initRecordsPage() {
     let currentPage = 1;
 
     async function loadEntries() {
-        if (isModalOpen()) {
-            return;
-        }
-
         try {
             const response = await fetch(`${apiBaseUrl}/api/entries`);
             if (!response.ok) {
@@ -792,19 +736,6 @@ function initRecordsPage() {
                 cell.textContent = value || "";
                 row.append(cell);
             });
-
-            const actionCell = document.createElement("td");
-            const modifyButton = document.createElement("button");
-            modifyButton.type = "button";
-            modifyButton.className = "btn secondary btn--small";
-            modifyButton.textContent = "Modify";
-            if (entry?.id) {
-                modifyButton.dataset.modifyId = entry.id;
-            } else {
-                modifyButton.disabled = true;
-            }
-            actionCell.append(modifyButton);
-            row.append(actionCell);
             tableBody.append(row);
         });
 
@@ -864,226 +795,6 @@ function initRecordsPage() {
             renderRecords();
         });
     }
-
-    tableBody.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-modify-id]");
-        if (!button) {
-            return;
-        }
-
-        const entryId = button.dataset.modifyId;
-        const entry = entriesById.get(entryId);
-        if (!entryId || !entry) {
-            setMessage(errorElement, "Unable to find that record.");
-            return;
-        }
-
-        openPasswordModal(entryId);
-    });
-
-    passwordCancel?.addEventListener("click", () => {
-        closePasswordModal();
-    });
-
-    passwordForm?.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        setMessage(passwordError, "");
-
-        const password = passwordInput?.value || "";
-        if (!password) {
-            setMessage(passwordError, "Please enter a password.");
-            passwordInput?.focus();
-            return;
-        }
-
-        const verifyButton = passwordForm.querySelector('button[type="submit"]');
-        if (verifyButton) {
-            verifyButton.disabled = true;
-        }
-
-        try {
-            const response = await fetch(`${apiBaseUrl}/api/verify-modify`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ password }),
-            });
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok) {
-                setMessage(
-                    passwordError,
-                    payload.error || "Incorrect password.",
-                );
-                passwordInput?.focus();
-                passwordInput?.select();
-                return;
-            }
-
-            modifyToken = payload.token || "";
-            const entry = entriesById.get(pendingEntryId);
-            closePasswordModal({ resetPending: false });
-            if (!entry || !modifyToken) {
-                setMessage(errorElement, "Unable to open that record.");
-                modifyToken = "";
-                modalOpen = false;
-                return;
-            }
-            openEditModal(entry);
-        } catch (error) {
-            setMessage(
-                passwordError,
-                "Unable to verify the password. Please try again.",
-            );
-        } finally {
-            if (verifyButton) {
-                verifyButton.disabled = false;
-            }
-        }
-    });
-
-    editCancel?.addEventListener("click", () => {
-        closeEditModal();
-    });
-
-    editBoxNumber?.addEventListener("input", () => {
-        if (editBoxNumber.disabled) {
-            return;
-        }
-        const sanitized = editBoxNumber.value.replace(/[^a-z0-9]/gi, "");
-        if (editBoxNumber.value !== sanitized) {
-            editBoxNumber.value = sanitized;
-        }
-    });
-
-    editNetWeight?.addEventListener("input", () => {
-        const [whole, decimal] = editNetWeight.value.split(".");
-        if (whole && whole.length > 4) {
-            editNetWeight.value =
-                whole.slice(0, 4) +
-                (decimal !== undefined ? `.${decimal}` : "");
-        }
-    });
-
-    editForm?.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        setMessage(editError, "");
-
-        const recordId = editRecordId?.value || pendingEntryId;
-        const current = entriesById.get(recordId);
-        if (!recordId || !current) {
-            setMessage(editError, "Unable to find that record.");
-            return;
-        }
-        if (!modifyToken) {
-            setMessage(editError, "Please verify the password again.");
-            return;
-        }
-
-        const product = editProduct?.value || "";
-        const netWeight = normalizeText(editNetWeight?.value);
-        const netWeightValue = Number.parseFloat(netWeight);
-        const boxEditable = isBoxNumberEditable(current);
-        const boxNumber = boxEditable
-            ? normalizeText(editBoxNumber?.value)
-            : current.boxNumber;
-
-        if (!netWeight) {
-            setMessage(editError, "Please enter a net weight.");
-            editNetWeight?.focus();
-            return;
-        }
-        if (!Number.isFinite(netWeightValue) || netWeightValue <= 0) {
-            setMessage(editError, "Net weight must be a positive number.");
-            editNetWeight?.focus();
-            return;
-        }
-        if (!product) {
-            setMessage(editError, "Please select a product.");
-            editProduct?.focus();
-            return;
-        }
-        if (boxEditable) {
-            if (!boxNumber) {
-                setMessage(editError, "Please enter a box number.");
-                editBoxNumber?.focus();
-                return;
-            }
-            if (!/^[a-z0-9]+$/i.test(boxNumber)) {
-                setMessage(editError, "Box number must be alphanumeric only.");
-                editBoxNumber?.focus();
-                return;
-            }
-        }
-
-        const saveButton = editForm.querySelector('button[type="submit"]');
-        if (saveButton) {
-            saveButton.disabled = true;
-        }
-
-        try {
-            const response = await fetch(
-                `${apiBaseUrl}/api/entries/${encodeURIComponent(recordId)}`,
-                {
-                    method: "PATCH",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({
-                        token: modifyToken,
-                        product,
-                        netWeight,
-                        boxNumber,
-                    }),
-                },
-            );
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok) {
-                throw new Error(
-                    payload.error || "Save failed. Please try again.",
-                );
-            }
-
-            closeEditModal();
-            setMessage(successElement, "Record updated successfully.");
-            await loadEntries();
-        } catch (error) {
-            setMessage(
-                editError,
-                error?.message || "Save failed. Please try again.",
-            );
-        } finally {
-            if (saveButton) {
-                saveButton.disabled = false;
-            }
-        }
-    });
-
-    function handleOverlayClick(event, closeFn) {
-        if (event.target === event.currentTarget) {
-            closeFn();
-        }
-    }
-
-    passwordModal?.addEventListener("click", (event) => {
-        handleOverlayClick(event, closePasswordModal);
-    });
-    editModal?.addEventListener("click", (event) => {
-        handleOverlayClick(event, closeEditModal);
-    });
-
-    document.addEventListener("keydown", (event) => {
-        if (event.key !== "Escape") {
-            return;
-        }
-        if (editModal && !editModal.hidden) {
-            closeEditModal();
-            return;
-        }
-        if (passwordModal && !passwordModal.hidden) {
-            closePasswordModal();
-        }
-    });
 
     loadEntries();
     pollTimer = window.setInterval(loadEntries, 4000);
