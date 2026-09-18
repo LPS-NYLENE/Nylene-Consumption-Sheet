@@ -88,6 +88,18 @@ function sampleEntry(boxNumber, extra = {}) {
     };
 }
 
+test("records page script defines modal helpers required to load entries", () => {
+    const appJs = fs.readFileSync(path.join(__dirname, "../app.js"), "utf8");
+    assert.match(appJs, /function isModalOpen\s*\(/);
+    assert.match(appJs, /let entriesById = new Map\(\)/);
+    assert.match(appJs, /function openPasswordModal\s*\(/);
+    assert.match(appJs, /function closePasswordModal\s*\(/);
+    assert.match(appJs, /function openEditModal\s*\(/);
+    assert.match(appJs, /function rebuildEntriesById\s*\(/);
+    assert.match(appJs, /getElementById\("password-modal"\)/);
+    assert.match(appJs, /getElementById\("records-search"\)/);
+});
+
 test("shiftDisplayTime moves clocks three hours forward", () => {
     const sevenAm = new Date(2026, 8, 2, 7, 0, 0);
     const shifted = shiftDisplayTime(sevenAm);
